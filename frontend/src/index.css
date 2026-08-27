@@ -204,6 +204,48 @@ main {
   cursor: pointer;
 }
 
+.audit-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audit-list li {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+
+.audit-list li.gap-pass {
+  background: #e6f6ec;
+}
+
+.audit-list li.gap-fail {
+  background: #fdeeea;
+}
+
+.audit-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.audit-result {
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.audit-time {
+  margin-left: auto;
+  font-size: 0.78rem;
+}
+
 .manifest-preview {
   background: #14161a;
   color: #d7f9e0;

@@ -22,4 +22,13 @@ export const api = {
   approveItem: (itemId) => request(`/catalog-items/${itemId}/approve`, { method: 'POST' }),
   publishManifest: (id) => request(`/merchants/${id}/fix/publish`, { method: 'POST' }),
   getManifestJson: (id) => request(`/merchants/${id}/manifest.json`),
+  getMandate: () => request('/mandate'),
+  setMandate: (body) => request('/mandate', { method: 'PUT', body: JSON.stringify(body) }),
+  purchase: (catalogItemId, requestedAmount) =>
+    request('/transact/purchase', {
+      method: 'POST',
+      body: JSON.stringify({ catalog_item_id: catalogItemId, requested_amount: requestedAmount }),
+    }),
+  getAuditLog: (merchantId) =>
+    request(merchantId ? `/audit-log?merchant_id=${merchantId}` : '/audit-log'),
 }
