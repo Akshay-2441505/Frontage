@@ -18,4 +18,8 @@ export const api = {
   getCatalog: (id) => request(`/merchants/${id}/catalog`),
   runDiagnose: (id) => request(`/merchants/${id}/diagnose`, { method: 'POST' }),
   getLatestDiagnosis: (id) => request(`/merchants/${id}/diagnose/latest`),
+  generateDescriptions: (id) => request(`/merchants/${id}/fix/generate-descriptions`, { method: 'POST' }),
+  approveItem: (itemId) => request(`/catalog-items/${itemId}/approve`, { method: 'POST' }),
+  publishManifest: (id) => request(`/merchants/${id}/fix/publish`, { method: 'POST' }),
+  getManifestJson: (id) => request(`/merchants/${id}/manifest.json`),
 }

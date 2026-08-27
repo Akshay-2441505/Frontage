@@ -173,3 +173,43 @@ main {
   color: #7a1f1a;
   font-size: 0.9rem;
 }
+
+.badge-generated {
+  font-size: 0.75rem;
+  color: #8a5a00;
+  background: #fff3d6;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.gap-pass-inline {
+  color: #16643a;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.gap-fail-inline {
+  color: #8a2f14;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.link-button {
+  background: none;
+  border: 1px solid #14161a;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.manifest-preview {
+  background: #14161a;
+  color: #d7f9e0;
+  padding: 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  max-height: 400px;
+}
