@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import Base, engine
 from app import models  # noqa: F401 - ensures models are registered before create_all
-from app.routers import merchants
+from app.routers import diagnose, merchants
 
 app = FastAPI(title="Frontage API")
 app.include_router(merchants.router)
+app.include_router(diagnose.router)
 
 app.add_middleware(
     CORSMiddleware,

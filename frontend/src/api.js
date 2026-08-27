@@ -16,4 +16,6 @@ export const api = {
   listMerchants: () => request('/merchants'),
   getMerchant: (id) => request(`/merchants/${id}`),
   getCatalog: (id) => request(`/merchants/${id}/catalog`),
+  runDiagnose: (id) => request(`/merchants/${id}/diagnose`, { method: 'POST' }),
+  getLatestDiagnosis: (id) => request(`/merchants/${id}/diagnose/latest`),
 }

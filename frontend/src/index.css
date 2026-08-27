@@ -104,3 +104,72 @@ main {
   background: #f0f1f3;
   font-weight: 600;
 }
+
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-top: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-header h2 {
+  margin: 0;
+}
+
+.card-header button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  background: #14161a;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.card-header button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.score {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 12px 0;
+}
+
+.gap-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gap-list li {
+  font-size: 0.9rem;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.gap-pass {
+  background: #e6f6ec;
+  color: #16643a;
+}
+
+.gap-fail {
+  background: #fdeeea;
+  color: #8a2f14;
+}
+
+.banner-error-inline {
+  color: #7a1f1a;
+  font-size: 0.9rem;
+}
