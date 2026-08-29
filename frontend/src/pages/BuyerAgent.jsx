@@ -13,18 +13,24 @@ export default function BuyerAgent({ merchantId }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  async function handleShop() {
+  async function handleShop(goalOverride) {
+    const goalToUse = goalOverride ?? goal
     setBusy(true)
     setError(null)
     setResult(null)
     try {
-      const data = await api.buyerShop(merchantId, goal)
+      const data = await api.buyerShop(merchantId, goalToUse)
       setResult(data)
     } catch (err) {
       setError(err.message)
     } finally {
       setBusy(false)
     }
+  }
+
+  function pickCandidate(name) {
+    setGoal(name)
+    handleShop(name)
   }
 
   const purchase = result?.purchase_result
@@ -54,7 +60,7 @@ export default function BuyerAgent({ merchantId }) {
             onChange={(e) => setGoal(e.target.value)}
             style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid #d0d3d8' }}
           />
-          <button onClick={handleShop} disabled={busy || !merchantId || !goal}>
+          <button onClick={() => handleShop()} disabled={busy || !merchantId || !goal}>
             {busy ? 'Shopping…' : 'Shop'}
           </button>
         </div>
@@ -75,6 +81,40 @@ export default function BuyerAgent({ merchantId }) {
 
           {result.status === 'no_match' && (
             <p className="gap-fail-inline">No match found: {result.reasoning}</p>
+          )}
+
+          {result.status === 'ambiguous' && (
+            <>
+              <p className="gap-fail-inline">Ambiguous goal: {result.reasoning}</p>
+              <p className="muted" style={{ marginTop: 4 }}>
+                "{result.goal}" matches {result.candidates.length} different products. Pick one to
+                shop for it specifically:
+              </p>
+              <table className="data-table" style={{ marginTop: 10 }}>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Price</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.candidates.map((c) => (
+                    <tr key={c.id}>
+                      <td>{c.name}</td>
+                      <td>
+                        {c.currency} {c.price}
+                      </td>
+                      <td>
+                        <button className="link-button" onClick={() => pickCandidate(c.name)} disabled={busy}>
+                          Shop for this one
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
 
           {result.status === 'purchase_attempted' && (
