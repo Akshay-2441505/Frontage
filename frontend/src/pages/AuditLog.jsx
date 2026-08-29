@@ -9,6 +9,12 @@ function resultClass(result) {
   return 'gap-fail'
 }
 
+function medianPrice(catalog) {
+  if (catalog.length === 0) return null
+  const prices = [...catalog.map((i) => i.price)].sort((a, b) => a - b)
+  return prices[Math.floor(prices.length / 2)]
+}
+
 export default function AuditLog({ merchantId }) {
   const [actions, setActions] = useState([])
   const [mandate, setMandate] = useState(null)
@@ -127,10 +133,19 @@ export default function AuditLog({ merchantId }) {
           <button onClick={handleSaveMandate} disabled={savingMandate || !merchantId || !ceilingInput}>
             {savingMandate ? 'Saving…' : 'Save'}
           </button>
+          <button
+            className="link-button"
+            onClick={() => setCeilingInput(String(medianPrice(catalog)))}
+            disabled={catalog.length === 0}
+          >
+            Suggest from catalog
+          </button>
         </div>
         <p className="muted" style={{ fontSize: '0.78rem', marginTop: 6 }}>
-          Saving creates a mandate scoped to this merchant only — it overrides the global default
-          for this merchant from now on, without affecting other merchants.
+          "Suggest" fills in this store's median catalog price — roughly half the products land
+          under that budget and half over, so both a successful purchase and a spend-ceiling
+          block are demonstrable regardless of the store's price range. It only fills the field;
+          nothing is saved until you click Save.
         </p>
       </section>
 
