@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Manifest from './pages/Manifest'
 import AuditLog from './pages/AuditLog'
 import BuyerAgent from './pages/BuyerAgent'
+import ImportStore from './pages/ImportStore'
 import './index.css'
 
 export default function App() {
@@ -12,14 +13,23 @@ export default function App() {
   const [merchantId, setMerchantId] = useState('')
   const [error, setError] = useState(null)
 
-  useEffect(() => {
+  function reloadMerchants(selectId) {
     api
       .listMerchants()
       .then((data) => {
         setMerchants(data)
-        if (data.length > 0) setMerchantId(data[0].id)
+        if (selectId) {
+          setMerchantId(selectId)
+        } else if (data.length > 0 && !merchantId) {
+          setMerchantId(data[0].id)
+        }
       })
       .catch((err) => setError(err.message))
+  }
+
+  useEffect(() => {
+    reloadMerchants()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
@@ -31,6 +41,7 @@ export default function App() {
           <NavLink to="/manifest">Manifest</NavLink>
           <NavLink to="/buyer-agent">Buyer Agent</NavLink>
           <NavLink to="/audit-log">Audit Log</NavLink>
+          <NavLink to="/import">Import Store</NavLink>
         </nav>
         <select value={merchantId} onChange={(e) => setMerchantId(e.target.value)}>
           {merchants.map((m) => (
@@ -53,6 +64,7 @@ export default function App() {
           <Route path="/manifest" element={<Manifest merchantId={merchantId} />} />
           <Route path="/buyer-agent" element={<BuyerAgent merchantId={merchantId} />} />
           <Route path="/audit-log" element={<AuditLog merchantId={merchantId} />} />
+          <Route path="/import" element={<ImportStore onImported={reloadMerchants} />} />
         </Routes>
       </main>
     </div>

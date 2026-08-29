@@ -107,6 +107,14 @@ class PurchaseRequestIn(BaseModel):
     buyer_goal: str | None = None
 
 
+class ImportStoreIn(BaseModel):
+    store_url: str
+    merchant_name: str
+    source: str = "shopify"
+    currency: str = "INR"
+    limit: int = 25
+
+
 class ShoppingGoalIn(BaseModel):
     merchant_id: str
     goal: str

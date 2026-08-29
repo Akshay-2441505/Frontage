@@ -37,4 +37,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ merchant_id: merchantId, goal }),
     }),
+  importStore: (storeUrl, merchantName, currency) =>
+    request('/import', {
+      method: 'POST',
+      body: JSON.stringify({ store_url: storeUrl, merchant_name: merchantName, currency }),
+    }),
 }
