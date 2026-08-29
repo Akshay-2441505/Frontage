@@ -171,7 +171,12 @@ export default function AuditLog({ merchantId }) {
         </div>
         {purchaseResult && (
           <p className={purchaseResult.status === 'success' ? 'gap-pass-inline' : 'gap-fail-inline'} style={{ marginTop: 10 }}>
-            {purchaseResult.status.toUpperCase()}: {purchaseResult.reason || 'order created'}
+            {purchaseResult.status.toUpperCase()}:{' '}
+            {purchaseResult.status === 'success'
+              ? purchaseResult.payment_link_error
+                ? `order ${purchaseResult.razorpay_order_id} created, no payment link (${purchaseResult.payment_link_error})`
+                : `order ${purchaseResult.razorpay_order_id} created`
+              : purchaseResult.reason}
           </p>
         )}
       </section>

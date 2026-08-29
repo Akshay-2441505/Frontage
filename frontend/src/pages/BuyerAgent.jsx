@@ -129,7 +129,9 @@ export default function BuyerAgent({ merchantId }) {
                 <strong>Transact Agent — {purchase.status.toUpperCase()}</strong>
                 <p style={{ margin: '6px 0 0' }}>
                   {purchase.status === 'success'
-                    ? `Order ${purchase.razorpay_order_id} created.`
+                    ? purchase.payment_link_error
+                      ? `Order ${purchase.razorpay_order_id} created — no payment link (${purchase.payment_link_error}), but the order itself is valid.`
+                      : `Order ${purchase.razorpay_order_id} created.`
                     : purchase.reason}
                 </p>
               </div>

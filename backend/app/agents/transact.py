@@ -9,13 +9,47 @@ Gate order (checked in this sequence, first failure wins):
 4. requested amount matches the item's current catalog price (price/availability drift)
 5. item is in stock
 Only if all five pass does Razorpay get called.
+
+Beyond the gates, two more failure modes are handled deliberately (the spec's other
+named failure option, §9: "Razorpay API failure/timeout... retries within a bounded
+limit, then fails closed"):
+- transient Razorpay/network errors are retried a bounded number of times with a
+  short backoff, then fail closed -- never a silent infinite retry loop
+- a validation error (e.g. amount too large) is never retried, since retrying a
+  request that's deterministically invalid just wastes time before failing anyway
 """
+import time
+
+import requests
+from razorpay.errors import GatewayError, ServerError
 from sqlalchemy.orm import Session
 
 from app.agents.razorpay_client import get_client
 from app.models import AgentAction, AgentResult, CatalogItem, Mandate, Transaction, TransactionStatus
 
 PRICE_TOLERANCE = 0.01
+
+MAX_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 0.5
+# ServerError/GatewayError are Razorpay's own transient-side failures; connection/timeout
+# errors are transport-level. A BadRequestError (bad amount, bad currency, etc.) is a
+# validation failure that will fail identically every time, so it's deliberately NOT here.
+RETRYABLE_EXCEPTIONS = (ServerError, GatewayError, requests.exceptions.ConnectionError, requests.exceptions.Timeout)
+
+
+def _call_with_retry(fn):
+    """Calls fn() up to MAX_ATTEMPTS times, retrying only on RETRYABLE_EXCEPTIONS with a
+    short linear backoff. Returns (result, attempts_used). Raises the last exception
+    (retryable or not) once attempts are exhausted -- never retries forever."""
+    last_exc = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return fn(), attempt
+        except RETRYABLE_EXCEPTIONS as exc:
+            last_exc = exc
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+    raise last_exc
 
 
 def _razorpay_safe_text(text: str) -> str:
@@ -110,28 +144,12 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
     amount_paise = int(round(item.price * 100))
     try:
         client = get_client()
-        order = client.order.create(
-            {
-                "amount": amount_paise,
-                "currency": item.currency,
-                "receipt": f"frontage-{item.id[:8]}",
-                "notes": {"merchant_id": merchant.id, "catalog_item_id": item.id, "requester": requester},
-            }
-        )
-        payment_link = client.payment_link.create(
-            {
-                "amount": amount_paise,
-                "currency": item.currency,
-                "description": _razorpay_safe_text(f"{merchant.name}: {item.name}"),
-                "notes": {"order_id": order["id"], "catalog_item_id": item.id},
-            }
-        )
-    except Exception as exc:  # noqa: BLE001 - fail closed on any Razorpay error (incl. not configured)
+    except Exception as exc:  # noqa: BLE001 - e.g. RazorpayNotConfigured; never retryable
         action = AgentAction(
             agent_name="Transact",
             merchant_id=merchant.id,
-            reasoning=f"All mandate checks passed, but the Razorpay call failed: {exc}",
-            action_taken="Attempted to create a Razorpay test-mode order.",
+            reasoning=f"All mandate checks passed, but the Razorpay client could not be created: {exc}",
+            action_taken="Attempted to create a Razorpay client.",
             input=input_data,
             output=None,
             result=AgentResult.failed,
@@ -141,28 +159,93 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
         db.flush()
         return {"status": "failed", "reason": str(exc), "agent_action_id": action.id}
 
+    try:
+        order, order_attempts = _call_with_retry(
+            lambda: client.order.create(
+                {
+                    "amount": amount_paise,
+                    "currency": item.currency,
+                    "receipt": f"frontage-{item.id[:8]}",
+                    "notes": {"merchant_id": merchant.id, "catalog_item_id": item.id, "requester": requester},
+                }
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - fail closed after retries (if any) are exhausted
+        action = AgentAction(
+            agent_name="Transact",
+            merchant_id=merchant.id,
+            reasoning=f"All mandate checks passed, but creating the Razorpay order failed: {exc}",
+            action_taken="Attempted to create a Razorpay test-mode order (with bounded retry on transient errors).",
+            input=input_data,
+            output=None,
+            result=AgentResult.failed,
+            mandate_id=mandate.id,
+        )
+        db.add(action)
+        db.flush()
+        return {"status": "failed", "reason": str(exc), "agent_action_id": action.id}
+
+    # The order is now real and valid regardless of what happens next -- a payment link is
+    # a convenience artifact, not the authoritative record of the purchase. Razorpay's
+    # Payment Links API has a lower maximum amount than Orders (~INR 75k vs 5,00,000 on
+    # this account), so a large-but-legitimate order can outrun it; that's not a reason to
+    # report the whole purchase as failed when the order itself succeeded.
+    payment_link = None
+    payment_link_error = None
+    link_attempts = 1
+    try:
+        payment_link, link_attempts = _call_with_retry(
+            lambda: client.payment_link.create(
+                {
+                    "amount": amount_paise,
+                    "currency": item.currency,
+                    "description": _razorpay_safe_text(f"{merchant.name}: {item.name}"),
+                    "notes": {"order_id": order["id"], "catalog_item_id": item.id},
+                }
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - degrade to order-only, don't fail the purchase
+        payment_link_error = str(exc)
+
     transaction = Transaction(
         merchant_id=merchant.id,
         catalog_item_id=item.id,
         amount=item.price,
         razorpay_order_id=order["id"],
-        razorpay_payment_link_id=payment_link["id"],
+        razorpay_payment_link_id=payment_link["id"] if payment_link else None,
         status=TransactionStatus.created,
     )
     db.add(transaction)
     db.flush()
 
+    reasoning = (
+        f"All mandate checks passed for {item.name} at ₹{item.price:g} "
+        f"(ceiling ₹{mandate.spend_ceiling:g}). "
+    )
+    if order_attempts > 1:
+        reasoning += f"Order creation needed {order_attempts} attempts after transient Razorpay errors. "
+    reasoning += f"Created Razorpay test-mode order {order['id']}. "
+    if payment_link:
+        reasoning += f"Created payment link {payment_link['id']}"
+        reasoning += f" (needed {link_attempts} attempts)." if link_attempts > 1 else "."
+    else:
+        reasoning += (
+            f"Could not create a payment link ({payment_link_error}) — the order itself is "
+            "still valid and was not affected."
+        )
+
     action = AgentAction(
         agent_name="Transact",
         merchant_id=merchant.id,
-        reasoning=(
-            f"All mandate checks passed for {item.name} at ₹{item.price:g} "
-            f"(ceiling ₹{mandate.spend_ceiling:g}). Created Razorpay test-mode order "
-            f"{order['id']} and payment link {payment_link['id']}."
-        ),
-        action_taken="Created Razorpay test-mode order and payment link.",
+        reasoning=reasoning,
+        action_taken="Created Razorpay test-mode order" + (" and payment link." if payment_link else "; payment link creation failed."),
         input=input_data,
-        output={"order_id": order["id"], "payment_link_id": payment_link["id"], "payment_link_url": payment_link.get("short_url")},
+        output={
+            "order_id": order["id"],
+            "payment_link_id": payment_link["id"] if payment_link else None,
+            "payment_link_url": payment_link.get("short_url") if payment_link else None,
+            "payment_link_error": payment_link_error,
+        },
         result=AgentResult.success,
         mandate_id=mandate.id,
     )
@@ -175,7 +258,8 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
         "status": "success",
         "transaction_id": transaction.id,
         "razorpay_order_id": order["id"],
-        "razorpay_payment_link_id": payment_link["id"],
-        "payment_link_url": payment_link.get("short_url"),
+        "razorpay_payment_link_id": payment_link["id"] if payment_link else None,
+        "payment_link_url": payment_link.get("short_url") if payment_link else None,
+        "payment_link_error": payment_link_error,
         "agent_action_id": action.id,
     }
