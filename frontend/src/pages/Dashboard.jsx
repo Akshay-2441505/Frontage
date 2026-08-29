@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 
+function formatVariantInfo(variantInfo) {
+  if (!variantInfo) return null
+  return Object.entries(variantInfo)
+    .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+    .join(' · ')
+}
+
 function RevenueOpportunity({ history, catalog }) {
   if (history.length === 0) {
     return <p className="muted">Run the Diagnose Agent to see the before/after story here.</p>
@@ -114,6 +121,7 @@ export default function Dashboard({ merchantId }) {
             <th>Description</th>
             <th>Price</th>
             <th>Availability</th>
+            <th>Variant info</th>
             <th>Agent readable</th>
           </tr>
         </thead>
@@ -128,7 +136,10 @@ export default function Dashboard({ merchantId }) {
                 {item.currency} {item.price}
               </td>
               <td className={item.availability ? '' : 'muted'}>
-                {item.availability || 'ambiguous'}
+                {item.availability || 'not set'}
+              </td>
+              <td className={item.variant_info ? '' : 'muted'}>
+                {formatVariantInfo(item.variant_info) || 'missing'}
               </td>
               <td>{item.agent_readable ? 'yes' : 'no'}</td>
             </tr>
