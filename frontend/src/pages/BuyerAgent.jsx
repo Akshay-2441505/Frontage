@@ -28,9 +28,28 @@ export default function BuyerAgent({ merchantId }) {
     }
   }
 
-  function pickCandidate(name) {
-    setGoal(name)
-    handleShop(name)
+  async function pickCandidate(candidate) {
+    // Buy this exact item by id, bypassing the LLM name search entirely -- re-searching
+    // by name breaks when multiple candidates share an identical name (a real case: this
+    // catalog has two products both literally named "Mystery Box (1 full-size + 2
+    // travel-size + 1 pouch)"), which would just re-trigger "ambiguous" forever. The human
+    // already disambiguated by clicking a specific row, so honor that choice directly.
+    setBusy(true)
+    setError(null)
+    try {
+      const purchaseResult = await api.purchase(candidate.id, candidate.price)
+      setResult({
+        status: 'purchase_attempted',
+        goal: `(directly selected) ${candidate.name}`,
+        selected_product: candidate,
+        buyer_reasoning: 'Selected directly from the ambiguous candidates list.',
+        purchase_result: purchaseResult,
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   const purchase = result?.purchase_result
@@ -106,7 +125,7 @@ export default function BuyerAgent({ merchantId }) {
                         {c.currency} {c.price}
                       </td>
                       <td>
-                        <button className="link-button" onClick={() => pickCandidate(c.name)} disabled={busy}>
+                        <button className="link-button" onClick={() => pickCandidate(c)} disabled={busy}>
                           Shop for this one
                         </button>
                       </td>
