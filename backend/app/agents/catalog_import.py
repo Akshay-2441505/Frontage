@@ -46,15 +46,28 @@ def import_store(db: Session, source_name: str, store_url: str, merchant_name: s
         items.append(item)
     db.add_all(items)
 
-    added_to_mandate = False
-    mandate = db.query(Mandate).filter(Mandate.merchant_id.is_(None)).order_by(Mandate.created_at.desc()).first()
-    if mandate and merchant.id not in (mandate.allow_listed_merchants or []):
-        mandate.allow_listed_merchants = [*mandate.allow_listed_merchants, merchant.id]
-        added_to_mandate = True
+    # A single global spend ceiling can't fit every brand's price range -- Comet's
+    # cheapest shoe alone is well above the seed demo's INR 1500 ceiling, which would
+    # block the entire catalog outright. Give each imported merchant its own mandate,
+    # ceiling set at the catalog's median price: roughly half the items land under
+    # budget and half over, so both a successful purchase and a spend-ceiling breach
+    # are demonstrable out of the box, whatever the store's actual price range is.
+    # This is a starting point, not a fixed rule -- a human can still adjust it via
+    # PUT /mandate afterward.
+    prices = sorted(i.price for i in items)
+    median_price = prices[len(prices) // 2] if prices else 0.0
+
+    mandate = Mandate(
+        merchant_id=merchant.id,
+        spend_ceiling=median_price,
+        allow_listed_merchants=[merchant.id],
+        created_by="auto-import (catalog median price)",
+    )
+    db.add(mandate)
 
     return {
         "merchant_id": merchant.id,
         "merchant_name": merchant.name,
         "item_count": len(items),
-        "added_to_mandate_allow_list": added_to_mandate,
+        "mandate_spend_ceiling": median_price,
     }

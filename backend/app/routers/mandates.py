@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.agents.transact import _active_mandate
 from app.db import get_db
 from app.models import Mandate
 from app.schemas import MandateIn, MandateOut
@@ -9,8 +10,16 @@ router = APIRouter(prefix="/mandate", tags=["mandate"])
 
 
 @router.get("", response_model=MandateOut)
-def get_active_mandate(db: Session = Depends(get_db)):
-    mandate = db.query(Mandate).order_by(Mandate.created_at.desc()).first()
+def get_active_mandate(merchant_id: str | None = Query(default=None), db: Session = Depends(get_db)):
+    """Returns the mandate that would actually apply to a purchase right now: a
+    merchant-specific mandate if one exists, else the global default -- same
+    resolution the Transact Agent itself uses. Without merchant_id, falls back to
+    whichever mandate was created most recently, for callers that just want *a*
+    mandate to display."""
+    if merchant_id:
+        mandate = _active_mandate(db, merchant_id)
+    else:
+        mandate = db.query(Mandate).order_by(Mandate.created_at.desc()).first()
     if not mandate:
         raise HTTPException(status_code=404, detail="No mandate configured yet")
     return mandate

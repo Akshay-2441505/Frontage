@@ -12,11 +12,24 @@ function resultClass(result) {
 export default function AuditLog({ merchantId }) {
   const [actions, setActions] = useState([])
   const [mandate, setMandate] = useState(null)
+  const [ceilingInput, setCeilingInput] = useState('')
+  const [savingMandate, setSavingMandate] = useState(false)
   const [catalog, setCatalog] = useState([])
   const [selectedItem, setSelectedItem] = useState('')
   const [amount, setAmount] = useState('')
   const [purchaseResult, setPurchaseResult] = useState(null)
   const [busy, setBusy] = useState(false)
+
+  function reloadMandate() {
+    if (!merchantId) return
+    api
+      .getMandate(merchantId)
+      .then((m) => {
+        setMandate(m)
+        setCeilingInput(String(m.spend_ceiling))
+      })
+      .catch(() => setMandate(null))
+  }
 
   useEffect(() => {
     if (!merchantId) return
@@ -27,7 +40,8 @@ export default function AuditLog({ merchantId }) {
         setAmount(String(items[0].price))
       }
     })
-    api.getMandate().then(setMandate).catch(() => setMandate(null))
+    reloadMandate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [merchantId])
 
   useEffect(() => {
@@ -65,6 +79,23 @@ export default function AuditLog({ merchantId }) {
     }
   }
 
+  async function handleSaveMandate() {
+    setSavingMandate(true)
+    try {
+      await api.setMandate({
+        merchant_id: merchantId,
+        spend_ceiling: Number(ceilingInput),
+        allow_listed_merchants: [merchantId],
+        created_by: 'demo-user',
+      })
+      reloadMandate()
+    } finally {
+      setSavingMandate(false)
+    }
+  }
+
+  const isMerchantSpecific = mandate && mandate.merchant_id === merchantId
+
   return (
     <div className="page">
       <h1>Audit Log</h1>
@@ -77,12 +108,30 @@ export default function AuditLog({ merchantId }) {
         <h2>Mandate (human-set boundary)</h2>
         {mandate ? (
           <p>
-            Spend ceiling: <strong>₹{mandate.spend_ceiling}</strong> · Allow-listed merchants:{' '}
-            {mandate.allow_listed_merchants.length}
+            {isMerchantSpecific ? 'Merchant-specific mandate' : 'Global default mandate'} — spend
+            ceiling: <strong>₹{mandate.spend_ceiling}</strong>
           </p>
         ) : (
-          <p className="muted">No mandate configured.</p>
+          <p className="muted">No mandate configured for this merchant.</p>
         )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+          <label className="muted" style={{ fontSize: '0.85rem' }}>
+            Set spend ceiling for this merchant:
+          </label>
+          <input
+            type="number"
+            value={ceilingInput}
+            onChange={(e) => setCeilingInput(e.target.value)}
+            style={{ width: 100 }}
+          />
+          <button onClick={handleSaveMandate} disabled={savingMandate || !merchantId || !ceilingInput}>
+            {savingMandate ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        <p className="muted" style={{ fontSize: '0.78rem', marginTop: 6 }}>
+          Saving creates a mandate scoped to this merchant only — it overrides the global default
+          for this merchant from now on, without affecting other merchants.
+        </p>
       </section>
 
       <section className="card">

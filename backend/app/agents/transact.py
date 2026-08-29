@@ -18,6 +18,15 @@ from app.models import AgentAction, AgentResult, CatalogItem, Mandate, Transacti
 PRICE_TOLERANCE = 0.01
 
 
+def _razorpay_safe_text(text: str) -> str:
+    """Razorpay's backend rejects characters outside the Basic Multilingual Plane
+    (most emoji, some symbols) in free-text fields like a payment link description --
+    a real MySQL utf8mb3/utf8mb4 collation mismatch on their end, not ours. Real
+    merchant-authored product names (e.g. imported from a live store) can contain
+    these, so strip anything outside the BMP rather than let the whole purchase fail."""
+    return "".join(ch for ch in text if ord(ch) <= 0xFFFF).strip()
+
+
 def _active_mandate(db: Session, merchant_id: str) -> Mandate | None:
     specific = (
         db.query(Mandate)
@@ -113,7 +122,7 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             {
                 "amount": amount_paise,
                 "currency": item.currency,
-                "description": f"{merchant.name}: {item.name}",
+                "description": _razorpay_safe_text(f"{merchant.name}: {item.name}"),
                 "notes": {"order_id": order["id"], "catalog_item_id": item.id},
             }
         )

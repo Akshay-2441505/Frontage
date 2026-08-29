@@ -77,9 +77,11 @@ export default function ImportStore({ onImported }) {
         {error && <p className="banner-error-inline">{error}</p>}
         {result && (
           <p className="gap-pass-inline" style={{ marginTop: 10 }}>
-            Imported {result.item_count} products as "{result.merchant_name}".{' '}
-            {result.added_to_mandate_allow_list && 'Added to the demo mandate allow-list, so it can be transacted with immediately.'}{' '}
-            Select it from the merchant dropdown above to explore.
+            Imported {result.item_count} products as "{result.merchant_name}". Created a spend
+            mandate for it at ₹{result.mandate_spend_ceiling} (this store's median price, so
+            roughly half its catalog is purchasable and half will hit the spend ceiling — adjust
+            it any time on the Audit Log page). Select it from the merchant dropdown above to
+            explore.
           </p>
         )}
       </section>
