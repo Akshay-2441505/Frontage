@@ -13,6 +13,7 @@ export default function Manifest({ merchantId }) {
   const [manifest, setManifest] = useState(null)
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
 
   async function reload() {
     if (!merchantId) return
@@ -25,21 +26,28 @@ export default function Manifest({ merchantId }) {
 
   useEffect(() => {
     reload()
+    setNotice(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [merchantId])
 
-  async function run(action, fn) {
+  async function run(action, fn, onSuccess) {
     setBusy(action)
     setError(null)
+    setNotice(null)
     try {
-      await fn()
+      const result = await fn()
       await reload()
+      if (onSuccess) setNotice(onSuccess(result))
     } catch (err) {
       setError(err.message)
     } finally {
       setBusy(null)
     }
   }
+
+  const missingCount = catalog.filter((i) => itemStatus(i) === 'missing description').length
+  const pendingCount = catalog.filter((i) => itemStatus(i) === 'pending review').length
+  const readyCount = catalog.filter((i) => itemStatus(i) === 'ready').length
 
   return (
     <div className="page">
@@ -54,19 +62,37 @@ export default function Manifest({ merchantId }) {
           <h2>Fix Agent</h2>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
-              onClick={() => run('generate', () => api.generateDescriptions(merchantId))}
+              onClick={() =>
+                run('generate', () => api.generateDescriptions(merchantId), (result) =>
+                  `Generated ${result.generated.length} description(s)${
+                    result.failed.length ? `, ${result.failed.length} failed` : ''
+                  }. Review and approve them below before publishing.`
+                )
+              }
               disabled={!merchantId || busy !== null}
             >
               {busy === 'generate' ? 'Generating…' : 'Generate missing descriptions'}
             </button>
             <button
-              onClick={() => run('publish', () => api.publishManifest(merchantId))}
+              onClick={() =>
+                run('publish', () => api.publishManifest(merchantId), (result) =>
+                  `Manifest v${result.version} published with ${result.item_ids.length} product(s).`
+                )
+              }
               disabled={!merchantId || busy !== null}
             >
               {busy === 'publish' ? 'Publishing…' : 'Publish manifest'}
             </button>
           </div>
         </div>
+
+        <p className="muted" style={{ fontSize: '0.85rem' }}>
+          {catalog.length} products — <strong className="gap-pass-inline">{readyCount} ready</strong>,{' '}
+          <strong className="gap-fail-inline">{missingCount} missing description</strong>,{' '}
+          <strong className="gap-fail-inline">{pendingCount} pending review</strong>
+        </p>
+
+        {notice && <p className="gap-pass-inline">{notice}</p>}
         {error && <p className="banner-error-inline">{error}</p>}
 
         <table className="data-table">
