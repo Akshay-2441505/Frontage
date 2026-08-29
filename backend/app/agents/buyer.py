@@ -22,6 +22,26 @@ SYSTEM_PROMPT = (
 )
 
 
+DESCRIPTION_PROMPT_CHARS = 150  # keep the LLM prompt small -- a full manifest of real
+# products (long real descriptions, variant lists, pretty-printed) can push a bigger
+# catalog well past Groq's free-tier per-request token limit; the full data still goes
+# back to the caller for display, just not into the prompt.
+
+
+def _compact_for_prompt(products: list[dict]) -> list[dict]:
+    return [
+        {
+            "id": p["id"],
+            "name": p["name"],
+            "description": (p["description"] or "")[:DESCRIPTION_PROMPT_CHARS],
+            "price": p["price"],
+            "currency": p["currency"],
+            "availability": p["availability"],
+        }
+        for p in products
+    ]
+
+
 def _manifest_products(db: Session, merchant: Merchant) -> list[dict]:
     manifest = (
         db.query(CatalogManifest)
@@ -73,7 +93,10 @@ def shop(db: Session, merchant: Merchant, goal: str) -> dict:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": f"Shopping goal: {goal}\n\nCatalog manifest:\n{json.dumps(products, indent=2)}",
+                    "content": (
+                        f"Shopping goal: {goal}\n\nCatalog manifest:\n"
+                        f"{json.dumps(_compact_for_prompt(products), separators=(',', ':'))}"
+                    ),
                 },
             ],
         )
@@ -115,7 +138,7 @@ def shop(db: Session, merchant: Merchant, goal: str) -> dict:
         action = AgentAction(
             agent_name="BuyerAgent",
             merchant_id=merchant.id,
-            reasoning=f"Claude selected item id {selected_id}, which is not in the manifest — refusing to proceed.",
+            reasoning=f"The LLM selected item id {selected_id}, which is not in the manifest — refusing to proceed.",
             action_taken="Validated selected product id against the manifest.",
             input={"merchant_id": merchant.id, "goal": goal},
             output={"selected_item_id": selected_id},
