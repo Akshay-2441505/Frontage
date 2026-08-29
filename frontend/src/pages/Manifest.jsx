@@ -45,7 +45,7 @@ export default function Manifest({ merchantId }) {
     <div className="page">
       <h1>Catalog Manifest</h1>
       <p className="muted">
-        The Fix Agent fills in missing descriptions with Claude, flagged as generated until
+        The Fix Agent fills in missing descriptions with an LLM, flagged as generated until
         you approve them, then publishes a structured manifest an AI agent can fetch.
       </p>
 

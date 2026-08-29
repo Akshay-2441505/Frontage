@@ -35,7 +35,7 @@ export default function BuyerAgent({ merchantId }) {
       <p className="muted">
         Stands in for a real third-party shopping agent (ChatGPT, Gemini, etc). Give it a
         natural-language shopping goal — it fetches the published manifest, picks a match with
-        Claude, then hands off to the mandate-gated Transact Agent.
+        an LLM, then hands off to the mandate-gated Transact Agent.
       </p>
 
       <section className="card">
