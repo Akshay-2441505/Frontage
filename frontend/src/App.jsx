@@ -4,6 +4,7 @@ import { api } from './api'
 import Dashboard from './pages/Dashboard'
 import Manifest from './pages/Manifest'
 import AuditLog from './pages/AuditLog'
+import BuyerAgent from './pages/BuyerAgent'
 import './index.css'
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
         <nav>
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/manifest">Manifest</NavLink>
+          <NavLink to="/buyer-agent">Buyer Agent</NavLink>
           <NavLink to="/audit-log">Audit Log</NavLink>
         </nav>
         <select value={merchantId} onChange={(e) => setMerchantId(e.target.value)}>
@@ -49,6 +51,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard merchantId={merchantId} />} />
           <Route path="/manifest" element={<Manifest merchantId={merchantId} />} />
+          <Route path="/buyer-agent" element={<BuyerAgent merchantId={merchantId} />} />
           <Route path="/audit-log" element={<AuditLog merchantId={merchantId} />} />
         </Routes>
       </main>

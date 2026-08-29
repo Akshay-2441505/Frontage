@@ -31,4 +31,9 @@ export const api = {
     }),
   getAuditLog: (merchantId) =>
     request(merchantId ? `/audit-log?merchant_id=${merchantId}` : '/audit-log'),
+  buyerShop: (merchantId, goal) =>
+    request('/buyer-agent/shop', {
+      method: 'POST',
+      body: JSON.stringify({ merchant_id: merchantId, goal }),
+    }),
 }
