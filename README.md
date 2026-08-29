@@ -24,6 +24,10 @@ spend-ceiling-breach failure case triggering correctly through that same natural
    ceiling, live price match, stock) before ever calling Razorpay. Every step — success or
    blocked — is written to an audit log in plain language.
 
+Beyond the two seeded demo merchants, **a real merchant's live catalog can be imported** from
+their public Shopify storefront feed and run through the exact same pipeline — see
+[Importing a real store](#importing-a-real-store) below.
+
 ## Architecture
 
 ```
@@ -114,6 +118,32 @@ the seed script — it wipes and reseeds both merchants.
    the deliberate failure case, see below.
 5. **Audit Log** → every step from all four agents, in plain language, live-polling.
 
+## Importing a real store
+
+**Import Store** → enter a real Shopify store's domain (e.g. `neemans.com`), a display name,
+and its pricing currency → "Import store". This fetches the store's public `/products.json`
+feed (a default Shopify storefront feature — not scraping, no credentials needed), creates a
+new merchant from the real product data, and auto-adds it to the demo mandate's allow-list so
+it's immediately transactable. The new merchant runs through the identical Diagnose → Fix →
+Transact pipeline as the seeded demo data.
+
+The importer is built as a pluggable "catalog source" (`backend/app/agents/catalog_sources/`)
+so a second platform can be added later without touching the import endpoint — Shopify is the
+first implementation, not the only one it's designed for.
+
+Verified against two real, live, unrelated Indian D2C brands:
+- **Neemans** (footwear) — 12 real products imported, scored **75/100** on first Diagnose (the
+  only gap: no manifest yet — their real descriptions and availability data were already clean
+  enough to pass on their own). After publishing a manifest: **100/100**. A Buyer Agent shopping
+  goal ("find black pointed flats under 1500 rupees") correctly picked the right product and
+  completed a real Razorpay test-mode order.
+- **Bombay Shaving Company** — 25 products imported end to end through the UI, confirming the
+  mechanism isn't tuned to one specific store.
+
+One caveat: Shopify's public product feed doesn't expose currency, so the import form asks for
+it explicitly — get it wrong and the Transact Agent's mandate-ceiling comparison won't make
+sense, since amounts are compared directly with no currency conversion.
+
 ## The deliberate failure case
 
 Per the track brief's "every money action explainable, bounded, gated — show the audit trail
@@ -175,3 +205,7 @@ without `--reload` for that reason — restart manually after backend changes.
   browser step if you want to see a link fully paid, not part of the automated flow.
 - No production deployment — this runs locally per the setup above; the submission rubric asks
   for "runs end to end on a fresh clone," which this satisfies without needing a hosted demo.
+- Real-store import only covers Shopify so far, and only stores that haven't disabled their
+  public `/products.json` feed. It also can't verify a store's actual payment gateway (that's
+  checkout-time config, invisible from a public product feed) — picking a real Razorpay
+  merchant to showcase is a curation choice, not something the importer checks or enforces.
