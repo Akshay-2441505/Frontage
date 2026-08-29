@@ -1,6 +1,6 @@
 """Shared Razorpay client. Always test-mode keys — see .env.example.
 
-Fails loudly if unconfigured, same principle as claude_client.py: a money-path
+Fails loudly if unconfigured, same principle as llm_client.py: a money-path
 agent must never silently no-op.
 """
 import razorpay

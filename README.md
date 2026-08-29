@@ -20,7 +20,8 @@ frontend/   React + Vite dashboard
 - Python 3.11+
 - Node 18+
 - A Razorpay account with **test-mode** API keys (Settings → API Keys → Test Mode)
-- An Anthropic API key
+- A Groq API key (free tier — [console.groq.com](https://console.groq.com)), used by the Fix
+  and Buyer agents
 
 ## Setup
 

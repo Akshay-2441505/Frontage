@@ -11,8 +11,8 @@ Two jobs, kept separate on purpose:
 """
 from sqlalchemy.orm import Session
 
-from app.agents.claude_client import FIX_MODEL, get_client
 from app.agents.diagnose import _description_ok
+from app.agents.llm_client import FIX_MODEL, get_client
 from app.models import AgentAction, AgentResult, CatalogItem, CatalogManifest, ItemSource, Merchant
 
 
@@ -26,12 +26,12 @@ def _generate_description(client, item: CatalogItem, merchant_name: str) -> str:
         f"Variant info: {item.variant_info or 'not specified'}\n\n"
         f"Return only the description text, nothing else."
     )
-    message = client.messages.create(
+    completion = client.chat.completions.create(
         model=FIX_MODEL,
         max_tokens=100,
         messages=[{"role": "user", "content": prompt}],
     )
-    return message.content[0].text.strip()
+    return completion.choices[0].message.content.strip()
 
 
 def generate_descriptions(db: Session, merchant: Merchant) -> dict:

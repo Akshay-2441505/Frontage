@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.agents.claude_client import ClaudeNotConfigured
 from app.agents.fix import approve_item, generate_descriptions, publish_manifest
+from app.agents.llm_client import LLMNotConfigured
 from app.db import get_db
 from app.models import CatalogItem, CatalogManifest, Merchant
 from app.schemas import CatalogItemOut, CatalogManifestOut
@@ -17,7 +17,7 @@ def fix_generate(merchant_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Merchant not found")
     try:
         result = generate_descriptions(db, merchant)
-    except ClaudeNotConfigured as exc:
+    except LLMNotConfigured as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     db.commit()

@@ -1,6 +1,6 @@
 """Simulated Buyer Agent: stands in for a real third-party shopping agent
 (ChatGPT, Gemini, etc). Fetches the published manifest, reasons over it with
-Claude to pick a matching product, then hands off to the Transact Agent —
+an LLM to pick a matching product, then hands off to the Transact Agent —
 which is the only thing allowed to touch money, and applies its own mandate
 gates regardless of what the Buyer Agent asked for.
 """
@@ -8,7 +8,7 @@ import json
 
 from sqlalchemy.orm import Session
 
-from app.agents.claude_client import REASONING_MODEL, get_client
+from app.agents.llm_client import REASONING_MODEL, get_client
 from app.agents.transact import attempt_purchase
 from app.models import AgentAction, AgentResult, CatalogItem, CatalogManifest, Merchant
 
@@ -64,25 +64,26 @@ def shop(db: Session, merchant: Merchant, goal: str) -> dict:
 
     try:
         client = get_client()
-        message = client.messages.create(
+        completion = client.chat.completions.create(
             model=REASONING_MODEL,
             max_tokens=300,
-            system=SYSTEM_PROMPT,
+            response_format={"type": "json_object"},
             messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
                     "content": f"Shopping goal: {goal}\n\nCatalog manifest:\n{json.dumps(products, indent=2)}",
-                }
+                },
             ],
         )
-        raw = message.content[0].text.strip()
+        raw = completion.choices[0].message.content.strip()
         parsed = json.loads(raw)
-    except Exception as exc:  # noqa: BLE001 - fail closed if Claude call/parse fails
+    except Exception as exc:  # noqa: BLE001 - fail closed if the LLM call/parse fails
         action = AgentAction(
             agent_name="BuyerAgent",
             merchant_id=merchant.id,
             reasoning=f"Could not reason over the manifest for goal '{goal}': {exc}",
-            action_taken="Called Claude to select a product from the manifest.",
+            action_taken="Called the LLM to select a product from the manifest.",
             input={"merchant_id": merchant.id, "goal": goal},
             output=None,
             result=AgentResult.failed,

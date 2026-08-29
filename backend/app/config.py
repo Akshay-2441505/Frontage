@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
-    anthropic_api_key: str = ""
+    groq_api_key: str = ""
     database_url: str = "sqlite:///./frontage.db"
     default_mandate_spend_ceiling_paise: int = 150000
 
