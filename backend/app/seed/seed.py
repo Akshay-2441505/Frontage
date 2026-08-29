@@ -3,14 +3,29 @@
 Run with:  python -m app.seed.seed
 """
 from app.db import Base, SessionLocal, engine
-from app.models import CatalogItem, ItemSource, Mandate, Merchant
+from app.models import (
+    AgentAction,
+    CatalogItem,
+    CatalogManifest,
+    DiagnosticReport,
+    ItemSource,
+    Mandate,
+    Merchant,
+    Transaction,
+)
 
 
 def run() -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        # wipe existing demo data for a clean reseed
+        # wipe existing demo data for a clean reseed -- children before parents, and
+        # everything that references a merchant_id, not just the merchant/catalog tables,
+        # otherwise old rows orphan against the freshly-generated merchant/item ids
+        db.query(Transaction).delete()
+        db.query(AgentAction).delete()
+        db.query(CatalogManifest).delete()
+        db.query(DiagnosticReport).delete()
         db.query(CatalogItem).delete()
         db.query(Merchant).delete()
         db.query(Mandate).delete()
