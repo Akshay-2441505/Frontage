@@ -8,6 +8,9 @@ from app.agents.catalog_sources.base import CatalogFetchError
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
+# Shopify's placeholder for "this product has no real variant choice" (a single-SKU
+# item) -- not a genuine variant value, so it's filtered out rather than reported as one.
+_SINGLE_SKU_PLACEHOLDER = "Default Title"
 
 
 def _strip_html(raw: str | None) -> str | None:
@@ -66,9 +69,7 @@ class ShopifySource:
         prices = [float(v["price"]) for v in variants if v.get("price") is not None]
         price = min(prices) if prices else 0.0
         any_in_stock = any(v.get("available") for v in variants)
-
-        sizes = sorted({v["option1"] for v in variants if v.get("option1")})
-        variant_info = {"sizes": sizes} if sizes else None
+        variant_info = self._extract_variant_info(product, variants)
 
         return {
             "name": product.get("title") or "Untitled product",
@@ -77,3 +78,18 @@ class ShopifySource:
             "availability": "in_stock" if any_in_stock else "out_of_stock",
             "variant_info": variant_info,
         }
+
+    def _extract_variant_info(self, product: dict, variants: list[dict]) -> dict | None:
+        """Uses each product's own declared option names (Size, Color, Scent, Strap
+        Material -- whatever the store actually calls it) instead of assuming every
+        store's first variant dimension is "sizes"; a watch or perfume brand's
+        variants rarely are."""
+        options = product.get("options") or []
+        variant_info = {}
+        for position, option in enumerate(options, start=1):
+            key = f"option{position}"
+            name = (option.get("name") or key).strip().lower()
+            values = sorted({v[key] for v in variants if v.get(key) and v[key] != _SINGLE_SKU_PLACEHOLDER})
+            if values:
+                variant_info[name] = values
+        return variant_info or None
