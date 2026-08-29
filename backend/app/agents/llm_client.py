@@ -11,10 +11,10 @@ from groq import Groq
 from app.config import settings
 
 # Small/fast model for bulk, lower-stakes Fix-phase content generation.
-FIX_MODEL = "llama-3.1-8b-instant"
+FIX_MODEL = "openai/gpt-oss-20b"
 # Larger model for Transact/Buyer Agent decisions, which are the ones judged
 # on "explainable, bounded, gated".
-REASONING_MODEL = "llama-3.3-70b-versatile"
+REASONING_MODEL = "openai/gpt-oss-120b"
 
 
 class LLMNotConfigured(RuntimeError):

@@ -28,8 +28,9 @@ def _generate_description(client, item: CatalogItem, merchant_name: str) -> str:
     )
     completion = client.chat.completions.create(
         model=FIX_MODEL,
-        max_tokens=100,
-        messages=[{"role": "user", "content": prompt}],
+        max_tokens=200,
+        reasoning_effort="low",  # gpt-oss models spend tokens on hidden reasoning by default,
+        messages=[{"role": "user", "content": prompt}],  # which starved the final answer at max_tokens=100
     )
     return completion.choices[0].message.content.strip()
 
@@ -53,29 +54,43 @@ def generate_descriptions(db: Session, merchant: Merchant) -> dict:
 
     client = get_client()
     generated = []
+    failed = []
     for item in items:
-        text = _generate_description(client, item, merchant.name)
+        try:
+            text = _generate_description(client, item, merchant.name)
+        except Exception as exc:  # noqa: BLE001 - one bad item must not kill the whole batch
+            failed.append({"catalog_item_id": item.id, "name": item.name, "error": str(exc)})
+            continue
         item.description = text
         item.source = ItemSource.generated
         item.agent_readable = False  # pending human review before publish
         generated.append({"catalog_item_id": item.id, "name": item.name, "description": text})
 
+    if generated:
+        reasoning = (
+            f"Generated {len(generated)} of {len(items)} product description(s) for "
+            f"{merchant.name} from name/price/variant data already on file. Each is flagged "
+            "as generated and held for merchant approval before publishing."
+        )
+        if failed:
+            reasoning += f" {len(failed)} item(s) failed to generate and were left as-is."
+        result = AgentResult.success
+    else:
+        reasoning = f"Failed to generate any descriptions for {merchant.name} — {len(failed)} item(s) errored."
+        result = AgentResult.failed
+
     db.add(
         AgentAction(
             agent_name="Fix",
             merchant_id=merchant.id,
-            reasoning=(
-                f"Generated {len(generated)} product description(s) for {merchant.name} "
-                "from name/price/variant data already on file. Each is flagged as generated "
-                "and held for merchant approval before publishing."
-            ),
-            action_taken="Generated descriptions via Claude for items with missing/thin descriptions.",
+            reasoning=reasoning,
+            action_taken="Generated descriptions via Groq for items with missing/thin descriptions.",
             input={"merchant_id": merchant.id, "item_count": len(items)},
-            output={"generated": generated},
-            result=AgentResult.success,
+            output={"generated": generated, "failed": failed},
+            result=result,
         )
     )
-    return {"generated": generated}
+    return {"generated": generated, "failed": failed}
 
 
 def approve_item(db: Session, item: CatalogItem) -> None:

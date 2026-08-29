@@ -66,7 +66,8 @@ def shop(db: Session, merchant: Merchant, goal: str) -> dict:
         client = get_client()
         completion = client.chat.completions.create(
             model=REASONING_MODEL,
-            max_tokens=300,
+            max_tokens=600,
+            reasoning_effort="low",  # gpt-oss models spend tokens on hidden reasoning by default
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
