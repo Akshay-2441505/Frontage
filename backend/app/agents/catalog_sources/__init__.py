@@ -11,6 +11,9 @@ A NormalizedProduct is a plain dict with exactly these keys:
     price: float
     availability: "in_stock" | "out_of_stock" | None
     variant_info: dict | None
+    has_variants: bool  -- does this product genuinely have more than one purchasable
+        form (sizes/colors/etc)? False for single-SKU products, which have nothing to
+        disambiguate -- missing variant_info only counts as a gap when this is True.
 """
 from app.agents.catalog_sources.base import CatalogFetchError, CatalogSource
 from app.agents.catalog_sources.shopify import ShopifySource

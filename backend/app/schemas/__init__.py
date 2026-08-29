@@ -14,6 +14,7 @@ class CatalogItemOut(BaseModel):
     currency: str
     availability: str | None
     variant_info: dict | None
+    has_variants: bool
     agent_readable: bool
     source: str
 

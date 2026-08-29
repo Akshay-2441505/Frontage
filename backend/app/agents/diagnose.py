@@ -22,7 +22,15 @@ def _description_ok(item: CatalogItem) -> bool:
 
 
 def _clarity_ok(item: CatalogItem) -> bool:
-    return bool(item.availability) and bool(item.variant_info)
+    if not item.availability:
+        return False
+    # A single-SKU product (has_variants=False) has nothing to disambiguate -- there's
+    # no real ambiguity in a product that only comes one way, so missing variant_info
+    # isn't a gap for it. It's only a gap when the product genuinely has multiple
+    # purchasable forms that weren't captured.
+    if item.has_variants and not item.variant_info:
+        return False
+    return True
 
 
 def run_diagnose(db: Session, merchant: Merchant) -> dict:

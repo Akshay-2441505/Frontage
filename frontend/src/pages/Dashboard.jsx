@@ -138,8 +138,8 @@ export default function Dashboard({ merchantId }) {
               <td className={item.availability ? '' : 'muted'}>
                 {item.availability || 'not set'}
               </td>
-              <td className={item.variant_info ? '' : 'muted'}>
-                {formatVariantInfo(item.variant_info) || 'missing'}
+              <td className={item.variant_info || !item.has_variants ? '' : 'muted'}>
+                {formatVariantInfo(item.variant_info) || (item.has_variants ? 'missing' : 'single option, no variants')}
               </td>
               <td>{item.agent_readable ? 'yes' : 'no'}</td>
             </tr>

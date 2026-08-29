@@ -55,6 +55,11 @@ class CatalogItem(Base):
     currency: Mapped[str] = mapped_column(String, default="INR")
     availability: Mapped[str | None] = mapped_column(String, nullable=True)  # "in_stock" | "out_of_stock" | None (ambiguous)
     variant_info: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Whether this product genuinely has more than one purchasable form (sizes, colors,
+    # etc). A single-SKU product (e.g. many watches/perfumes -- one named product, no
+    # choice to make) has nothing to disambiguate, so missing variant_info isn't a real
+    # gap for it; a multi-variant product with no captured variant_info is a real gap.
+    has_variants: Mapped[bool] = mapped_column(Boolean, default=True)
     agent_readable: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[ItemSource] = mapped_column(Enum(ItemSource), default=ItemSource.manual)
 

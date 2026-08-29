@@ -70,6 +70,11 @@ class ShopifySource:
         price = min(prices) if prices else 0.0
         any_in_stock = any(v.get("available") for v in variants)
         variant_info = self._extract_variant_info(product, variants)
+        # More than one Shopify variant means this product genuinely has more than one
+        # purchasable form (a real size/color/etc choice), regardless of whether we
+        # managed to label it well. Exactly one variant is Shopify's own signal for a
+        # single-SKU product -- nothing to disambiguate, not a data gap.
+        has_variants = len(variants) > 1
 
         return {
             "name": product.get("title") or "Untitled product",
@@ -77,6 +82,7 @@ class ShopifySource:
             "price": price,
             "availability": "in_stock" if any_in_stock else "out_of_stock",
             "variant_info": variant_info,
+            "has_variants": has_variants,
         }
 
     def _extract_variant_info(self, product: dict, variants: list[dict]) -> dict | None:
