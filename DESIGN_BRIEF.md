@@ -275,6 +275,27 @@ Meet these quietly; don't advertise them.
 > For each one, a line on *what specifically* is being borrowed — a layout idea, a density
 > level, a type treatment, a motion feel — is far more useful than the image alone.
 
+**Already gathered, in `Screenshots/`:**
+- Console-side (dark, data-dense admin references): audit/alert overview, e-commerce sales
+  dashboard, fintech product-performance panel, deep-navy SaaS analytics with glowing charts.
+  Consistent direction — dark, dense, chart-forward — worth treating as the default read for
+  `/merchant/*` unless overridden.
+- Buyer-side (conversational AI-assistant references): dark chat entry screens ("How can I
+  help you today?") and ChatGPT-style shopping flows with curated product cards, ratings, and
+  an "instant checkout here" link. These consistently point toward **Reading A in §4** — the
+  buyer surface as a simulated third-party agent, visually unrelated to Frontage — rather than
+  Reading B. Worth treating that as decided unless the design session finds a reason not to.
+
+**Audit Log specifically — a named pattern worth borrowing:** a Razorpay agentic-commerce
+marketing example (an "Abandoned Cart Conversion" automation — a different capability than
+anything Frontage does, purely a UI reference here) displays its agent run as a **live
+step-by-step trace**: named steps, a duration per step, a green checkmark on completion, and
+one step carries an inline
+artifact (an embedded, playable call recording). Applied to our Audit Log, the equivalent
+artifact would be the Razorpay order/payment link a successful Transact step produces. This is
+a much stronger model than the current flat list for showing *one purchase attempt's* steps
+in sequence — worth using as the direct reference for that view, not just general inspiration.
+
 ---
 
 ## 13. Material to draw from, and defaults to avoid
