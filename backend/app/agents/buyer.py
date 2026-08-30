@@ -140,6 +140,22 @@ def shop(db: Session, merchant: Merchant, goal: str) -> dict:
     if status == "ambiguous":
         candidate_ids = parsed.get("candidate_ids") or []
         candidates = [p for p in products if p["id"] in candidate_ids]
+
+        if not candidates:
+            # The LLM said "ambiguous" but every candidate id it gave either wasn't in
+            # the manifest at all (hallucinated) or the list was empty -- returning
+            # "ambiguous" with nothing to pick from is a dead end for the caller, so
+            # treat it the same as no match rather than surfacing an empty picker.
+            action = _log(
+                db, merchant.id, goal,
+                f"'{goal}' was flagged ambiguous, but none of the LLM's candidate ids matched "
+                "a real product in the manifest — treating as no match.",
+                "Validated ambiguous-status candidate ids against the manifest.",
+                AgentResult.failed,
+                output={"raw_candidate_ids": candidate_ids},
+            )
+            return {"status": "no_match", "reasoning": buyer_reasoning, "agent_action_id": action.id}
+
         action = _log(
             db, merchant.id, goal,
             buyer_reasoning or f"'{goal}' matches multiple products — refusing to guess which one.",

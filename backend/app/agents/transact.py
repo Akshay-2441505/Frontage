@@ -18,14 +18,18 @@ limit, then fails closed"):
 - a validation error (e.g. amount too large) is never retried, since retrying a
   request that's deterministically invalid just wastes time before failing anyway
 """
+import logging
 import time
 
 import requests
 from razorpay.errors import GatewayError, ServerError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.agents.razorpay_client import get_client
 from app.models import AgentAction, AgentResult, CatalogItem, Mandate, Transaction, TransactionStatus
+
+logger = logging.getLogger(__name__)
 
 PRICE_TOLERANCE = 0.01
 
@@ -73,6 +77,20 @@ def _active_mandate(db: Session, merchant_id: str) -> Mandate | None:
     return db.query(Mandate).filter(Mandate.merchant_id.is_(None)).order_by(Mandate.created_at.desc()).first()
 
 
+def _cumulative_spend(db: Session, mandate_id: str) -> float:
+    """Total already spent under this specific mandate version -- scoped to the
+    mandate's id, not the merchant, so raising the ceiling (which inserts a new
+    mandate row) naturally starts a fresh budget rather than carrying old spend
+    forward forever."""
+    total = (
+        db.query(func.sum(Transaction.amount))
+        .join(AgentAction, Transaction.agent_action_id == AgentAction.id)
+        .filter(AgentAction.mandate_id == mandate_id, AgentAction.result == AgentResult.success)
+        .scalar()
+    )
+    return total or 0.0
+
+
 def _blocked(db: Session, merchant_id: str, requester: str, reasoning: str, action_taken: str, input_data: dict, mandate_id: str | None = None) -> dict:
     action = AgentAction(
         agent_name="Transact",
@@ -118,11 +136,13 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             "Checked merchant against mandate allow-list.", input_data, mandate.id,
         )
 
-    if requested_amount > mandate.spend_ceiling:
+    already_spent = _cumulative_spend(db, mandate.id)
+    if already_spent + requested_amount > mandate.spend_ceiling:
         return _blocked(
             db, merchant.id, requester,
-            f"Requested ₹{requested_amount:g} exceeds mandate ceiling of ₹{mandate.spend_ceiling:g}.",
-            "Checked requested amount against mandate spend ceiling.", input_data, mandate.id,
+            f"Requested ₹{requested_amount:g} plus ₹{already_spent:g} already spent under this "
+            f"mandate would exceed its ceiling of ₹{mandate.spend_ceiling:g}.",
+            "Checked requested amount plus cumulative spend against mandate spend ceiling.", input_data, mandate.id,
         )
 
     if abs(requested_amount - item.price) > PRICE_TOLERANCE:
@@ -207,59 +227,86 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
     except Exception as exc:  # noqa: BLE001 - degrade to order-only, don't fail the purchase
         payment_link_error = str(exc)
 
-    transaction = Transaction(
-        merchant_id=merchant.id,
-        catalog_item_id=item.id,
-        amount=item.price,
-        razorpay_order_id=order["id"],
-        razorpay_payment_link_id=payment_link["id"] if payment_link else None,
-        status=TransactionStatus.created,
-    )
-    db.add(transaction)
-    db.flush()
-
-    reasoning = (
-        f"All mandate checks passed for {item.name} at ₹{item.price:g} "
-        f"(ceiling ₹{mandate.spend_ceiling:g}). "
-    )
-    if order_attempts > 1:
-        reasoning += f"Order creation needed {order_attempts} attempts after transient Razorpay errors. "
-    reasoning += f"Created Razorpay test-mode order {order['id']}. "
-    if payment_link:
-        reasoning += f"Created payment link {payment_link['id']}"
-        reasoning += f" (needed {link_attempts} attempts)." if link_attempts > 1 else "."
-    else:
-        reasoning += (
-            f"Could not create a payment link ({payment_link_error}) — the order itself is "
-            "still valid and was not affected."
+    # From here on, a real Razorpay order already exists -- nothing below may raise
+    # uncaught. If our own bookkeeping fails, the caller must still learn the real
+    # order id rather than getting a raw 500 with no trace of money-adjacent state
+    # that now exists on Razorpay's side.
+    try:
+        transaction = Transaction(
+            merchant_id=merchant.id,
+            catalog_item_id=item.id,
+            amount=item.price,
+            razorpay_order_id=order["id"],
+            razorpay_payment_link_id=payment_link["id"] if payment_link else None,
+            status=TransactionStatus.created,
         )
+        db.add(transaction)
+        db.flush()
 
-    action = AgentAction(
-        agent_name="Transact",
-        merchant_id=merchant.id,
-        reasoning=reasoning,
-        action_taken="Created Razorpay test-mode order" + (" and payment link." if payment_link else "; payment link creation failed."),
-        input=input_data,
-        output={
-            "order_id": order["id"],
-            "payment_link_id": payment_link["id"] if payment_link else None,
+        reasoning = (
+            f"All mandate checks passed for {item.name} at ₹{item.price:g} "
+            f"(ceiling ₹{mandate.spend_ceiling:g}). "
+        )
+        if order_attempts > 1:
+            reasoning += f"Order creation needed {order_attempts} attempts after transient Razorpay errors. "
+        reasoning += f"Created Razorpay test-mode order {order['id']}. "
+        if payment_link:
+            reasoning += f"Created payment link {payment_link['id']}"
+            reasoning += f" (needed {link_attempts} attempts)." if link_attempts > 1 else "."
+        else:
+            reasoning += (
+                f"Could not create a payment link ({payment_link_error}) — the order itself is "
+                "still valid and was not affected."
+            )
+
+        action = AgentAction(
+            agent_name="Transact",
+            merchant_id=merchant.id,
+            reasoning=reasoning,
+            action_taken="Created Razorpay test-mode order" + (" and payment link." if payment_link else "; payment link creation failed."),
+            input=input_data,
+            output={
+                "order_id": order["id"],
+                "payment_link_id": payment_link["id"] if payment_link else None,
+                "payment_link_url": payment_link.get("short_url") if payment_link else None,
+                "payment_link_error": payment_link_error,
+            },
+            result=AgentResult.success,
+            mandate_id=mandate.id,
+        )
+        db.add(action)
+        db.flush()
+
+        transaction.agent_action_id = action.id
+        db.flush()  # without this, agent_action_id stays unpersisted until the caller's
+        # eventual commit -- fine for a single request, but invisible to any query (like
+        # cumulative spend) issued against the DB before that commit happens
+
+        return {
+            "status": "success",
+            "transaction_id": transaction.id,
+            "razorpay_order_id": order["id"],
+            "razorpay_payment_link_id": payment_link["id"] if payment_link else None,
             "payment_link_url": payment_link.get("short_url") if payment_link else None,
             "payment_link_error": payment_link_error,
-        },
-        result=AgentResult.success,
-        mandate_id=mandate.id,
-    )
-    db.add(action)
-    db.flush()
-
-    transaction.agent_action_id = action.id
-
-    return {
-        "status": "success",
-        "transaction_id": transaction.id,
-        "razorpay_order_id": order["id"],
-        "razorpay_payment_link_id": payment_link["id"] if payment_link else None,
-        "payment_link_url": payment_link.get("short_url") if payment_link else None,
-        "payment_link_error": payment_link_error,
-        "agent_action_id": action.id,
-    }
+            "agent_action_id": action.id,
+        }
+    except Exception as exc:  # noqa: BLE001 - the Razorpay order already succeeded; never lose that
+        logger.error(
+            "Bookkeeping failed after a successful Razorpay order %s for merchant %s: %s",
+            order["id"], merchant.id, exc,
+        )
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001 - best effort; the order id below is what matters most
+            pass
+        return {
+            "status": "success",
+            "transaction_id": None,
+            "razorpay_order_id": order["id"],
+            "razorpay_payment_link_id": payment_link["id"] if payment_link else None,
+            "payment_link_url": payment_link.get("short_url") if payment_link else None,
+            "payment_link_error": payment_link_error,
+            "agent_action_id": None,
+            "local_record_error": str(exc),
+        }

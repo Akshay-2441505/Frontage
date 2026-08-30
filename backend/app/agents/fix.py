@@ -58,6 +58,11 @@ def generate_descriptions(db: Session, merchant: Merchant) -> dict:
     for item in items:
         try:
             text = _generate_description(client, item, merchant.name)
+            if not text:
+                # A "successful" call can still return blank/whitespace-only content (seen
+                # live: a reasoning model spending its whole token budget on hidden
+                # reasoning). Treat that the same as a call failure -- never publish nothing.
+                raise ValueError("LLM returned an empty description")
         except Exception as exc:  # noqa: BLE001 - one bad item must not kill the whole batch
             failed.append({"catalog_item_id": item.id, "name": item.name, "error": str(exc)})
             continue

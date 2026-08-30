@@ -1,6 +1,6 @@
 import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CatalogItemOut(BaseModel):
@@ -57,7 +57,7 @@ class CatalogManifestOut(BaseModel):
 
 class MandateIn(BaseModel):
     merchant_id: str | None = None
-    spend_ceiling: float
+    spend_ceiling: float = Field(gt=0)
     allow_listed_merchants: list[str] = []
     created_by: str = "demo-user"
 

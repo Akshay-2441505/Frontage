@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.transact import _active_mandate
 from app.db import get_db
-from app.models import Mandate
+from app.models import Mandate, Merchant
 from app.schemas import MandateIn, MandateOut
 
 router = APIRouter(prefix="/mandate", tags=["mandate"])
@@ -29,6 +29,12 @@ def get_active_mandate(merchant_id: str | None = Query(default=None), db: Sessio
 def set_mandate(body: MandateIn, db: Session = Depends(get_db)):
     """Human-set boundary — inserts a new mandate version rather than mutating in place,
     so the audit trail can always point back at the mandate active when a decision was made."""
+    if body.merchant_id and not db.get(Merchant, body.merchant_id):
+        raise HTTPException(status_code=422, detail=f"Merchant '{body.merchant_id}' does not exist.")
+    for allowed_id in body.allow_listed_merchants:
+        if not db.get(Merchant, allowed_id):
+            raise HTTPException(status_code=422, detail=f"Merchant '{allowed_id}' does not exist.")
+
     mandate = Mandate(
         merchant_id=body.merchant_id,
         spend_ceiling=body.spend_ceiling,
