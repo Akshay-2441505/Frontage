@@ -19,6 +19,10 @@ class CatalogItemOut(BaseModel):
     source: str
 
 
+class PriceUpdateIn(BaseModel):
+    price: float = Field(gt=0)
+
+
 class MerchantOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

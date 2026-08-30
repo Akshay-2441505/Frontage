@@ -14,6 +14,7 @@ export default function Manifest({ merchantId }) {
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [priceEdits, setPriceEdits] = useState({})
 
   async function reload() {
     if (!merchantId) return
@@ -43,6 +44,20 @@ export default function Manifest({ merchantId }) {
     } finally {
       setBusy(null)
     }
+  }
+
+  function priceInputValue(item) {
+    return priceEdits[item.id] ?? String(item.price)
+  }
+
+  async function handlePriceUpdate(item) {
+    const newPrice = Number(priceInputValue(item))
+    await run(`price-${item.id}`, () => api.updateItemPrice(item.id, newPrice))
+    setPriceEdits((prev) => {
+      const next = { ...prev }
+      delete next[item.id]
+      return next
+    })
   }
 
   const missingCount = catalog.filter((i) => itemStatus(i) === 'missing description').length
@@ -91,6 +106,10 @@ export default function Manifest({ merchantId }) {
           <strong className="gap-fail-inline">{missingCount} missing description</strong>,{' '}
           <strong className="gap-fail-inline">{pendingCount} pending review</strong>
         </p>
+        <p className="muted" style={{ fontSize: '0.78rem' }}>
+          Edit a price after publishing to simulate a merchant changing it post-manifest — the
+          Transact Agent halts on the resulting stale-price mismatch instead of charging it.
+        </p>
 
         {notice && <p className="gap-pass-inline">{notice}</p>}
         {error && <p className="banner-error-inline">{error}</p>}
@@ -100,6 +119,7 @@ export default function Manifest({ merchantId }) {
             <tr>
               <th>Name</th>
               <th>Description</th>
+              <th>Price</th>
               <th>Status</th>
               <th></th>
             </tr>
@@ -113,6 +133,27 @@ export default function Manifest({ merchantId }) {
                   <td className={item.description ? '' : 'muted'}>
                     {item.description || 'missing'}
                     {item.source === 'generated' && <span className="badge-generated"> generated</span>}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <input
+                        type="number"
+                        value={priceInputValue(item)}
+                        onChange={(e) =>
+                          setPriceEdits((prev) => ({ ...prev, [item.id]: e.target.value }))
+                        }
+                        style={{ width: 80, padding: '4px 6px' }}
+                      />
+                      {Number(priceInputValue(item)) !== item.price && (
+                        <button
+                          className="link-button"
+                          onClick={() => handlePriceUpdate(item)}
+                          disabled={busy !== null || !(Number(priceInputValue(item)) > 0)}
+                        >
+                          Update
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td>
                     <span className={status === 'ready' ? 'gap-pass-inline' : 'gap-fail-inline'}>{status}</span>

@@ -5,7 +5,7 @@ from app.agents.fix import approve_item, generate_descriptions, publish_manifest
 from app.agents.llm_client import LLMNotConfigured
 from app.db import get_db
 from app.models import CatalogItem, CatalogManifest, Merchant
-from app.schemas import CatalogItemOut, CatalogManifestOut
+from app.schemas import CatalogItemOut, CatalogManifestOut, PriceUpdateIn
 
 router = APIRouter(tags=["fix"])
 
@@ -30,6 +30,21 @@ def fix_approve(item_id: str, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(status_code=404, detail="Catalog item not found")
     approve_item(db, item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/catalog-items/{item_id}/price", response_model=CatalogItemOut)
+def update_price(item_id: str, body: PriceUpdateIn, db: Session = Depends(get_db)):
+    """Lets a merchant simulate a real-world price change on their own catalog --
+    the only way price/availability drift (spec §9's other named failure case) can
+    actually occur between a manifest being published and a purchase being attempted
+    against it, since nothing else in the app can edit a catalog item after creation."""
+    item = db.get(CatalogItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Catalog item not found")
+    item.price = body.price
     db.commit()
     db.refresh(item)
     return item

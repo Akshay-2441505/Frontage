@@ -21,6 +21,8 @@ export const api = {
   getDiagnosisHistory: (id) => request(`/merchants/${id}/diagnose/history`),
   generateDescriptions: (id) => request(`/merchants/${id}/fix/generate-descriptions`, { method: 'POST' }),
   approveItem: (itemId) => request(`/catalog-items/${itemId}/approve`, { method: 'POST' }),
+  updateItemPrice: (itemId, price) =>
+    request(`/catalog-items/${itemId}/price`, { method: 'PUT', body: JSON.stringify({ price }) }),
   publishManifest: (id) => request(`/merchants/${id}/fix/publish`, { method: 'POST' }),
   getManifestJson: (id) => request(`/merchants/${id}/manifest.json`),
   getMandate: (merchantId) => request(merchantId ? `/mandate?merchant_id=${merchantId}` : '/mandate'),
