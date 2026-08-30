@@ -106,6 +106,17 @@ frontend/   React + Vite dashboard (Dashboard / Manifest / Buyer Agent / Audit L
 To reset to a clean demo state (undo any manifests/transactions from a previous run), re-run
 the seed script — it wipes and reseeds both merchants.
 
+### Running the backend tests
+
+```bash
+cd backend
+pytest
+```
+
+Each test gets a fresh, isolated SQLite DB (never the real `frontage.db`) built from the same
+engine/session factories production uses. Covers the mandate-gating logic, foreign-key
+enforcement, Fix Agent failure handling, and Buyer Agent edge cases — see `backend/tests/`.
+
 ## Try it end to end
 
 1. **Dashboard** → select a merchant → "Run Diagnose Agent" → see the score and gaps.
