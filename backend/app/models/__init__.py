@@ -33,6 +33,16 @@ class TransactionStatus(str, enum.Enum):
     failed = "failed"
 
 
+class MandateWindow(str, enum.Enum):
+    # "one_time" is the legacy/simple behavior: spend_ceiling is an all-time total that
+    # never resets. The others match RBI e-mandate/UPI Autopay frequency vocabulary --
+    # spend_ceiling becomes a rolling total for that period instead of forever.
+    one_time = "one_time"
+    daily = "daily"
+    weekly = "weekly"
+    monthly = "monthly"
+
+
 class Merchant(Base):
     __tablename__ = "merchants"
 
@@ -92,7 +102,13 @@ class Mandate(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     merchant_id: Mapped[str | None] = mapped_column(ForeignKey("merchants.id"), nullable=True)
-    spend_ceiling: Mapped[float] = mapped_column(Float, nullable=False)
+    spend_ceiling: Mapped[float] = mapped_column(Float, nullable=False)  # windowed total cap
+    # Optional separate cap on any single purchase, independent of the windowed total --
+    # AP2-style mandates split these so one large-but-legal purchase can't silently eat the
+    # whole period's budget, and one small purchase can't be blocked just because the window
+    # cumulative happens to be high. None = no separate per-transaction limit.
+    per_transaction_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    window: Mapped[MandateWindow] = mapped_column(Enum(MandateWindow), default=MandateWindow.one_time)
     allow_listed_merchants: Mapped[list] = mapped_column(JSON, default=list)  # list of merchant_id
     created_by: Mapped[str] = mapped_column(String, default="demo-user")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)

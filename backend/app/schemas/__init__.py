@@ -1,4 +1,5 @@
 import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -59,9 +60,14 @@ class CatalogManifestOut(BaseModel):
     item_ids: list[str]
 
 
+MandateWindowLiteral = Literal["one_time", "daily", "weekly", "monthly"]
+
+
 class MandateIn(BaseModel):
     merchant_id: str | None = None
     spend_ceiling: float = Field(gt=0)
+    per_transaction_cap: float | None = Field(default=None, gt=0)
+    window: MandateWindowLiteral = "one_time"
     allow_listed_merchants: list[str] = []
     created_by: str = "demo-user"
 
@@ -72,6 +78,8 @@ class MandateOut(BaseModel):
     id: str
     merchant_id: str | None
     spend_ceiling: float
+    per_transaction_cap: float | None
+    window: MandateWindowLiteral
     allow_listed_merchants: list[str]
     created_by: str
     created_at: datetime.datetime

@@ -18,6 +18,7 @@ limit, then fails closed"):
 - a validation error (e.g. amount too large) is never retried, since retrying a
   request that's deterministically invalid just wastes time before failing anyway
 """
+import datetime
 import logging
 import time
 
@@ -27,7 +28,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.agents.razorpay_client import get_client
-from app.models import AgentAction, AgentResult, CatalogItem, Mandate, Transaction, TransactionStatus
+from app.models import AgentAction, AgentResult, CatalogItem, Mandate, MandateWindow, Transaction, TransactionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -77,17 +78,34 @@ def _active_mandate(db: Session, merchant_id: str) -> Mandate | None:
     return db.query(Mandate).filter(Mandate.merchant_id.is_(None)).order_by(Mandate.created_at.desc()).first()
 
 
-def _cumulative_spend(db: Session, mandate_id: str) -> float:
-    """Total already spent under this specific mandate version -- scoped to the
-    mandate's id, not the merchant, so raising the ceiling (which inserts a new
-    mandate row) naturally starts a fresh budget rather than carrying old spend
-    forward forever."""
-    total = (
+WINDOW_DURATIONS = {
+    MandateWindow.daily: datetime.timedelta(days=1),
+    MandateWindow.weekly: datetime.timedelta(days=7),
+    MandateWindow.monthly: datetime.timedelta(days=30),
+    # one_time has no entry -- no time cutoff, matches the original all-time-cumulative
+    # behavior exactly (also every existing mandate's default, so nothing already deployed
+    # changes behavior from this alone).
+}
+
+
+def _cumulative_spend(db: Session, mandate_id: str, window: MandateWindow) -> float:
+    """Total already spent under this specific mandate version -- scoped to the mandate's
+    id, not the merchant, so raising the ceiling (which inserts a new mandate row)
+    naturally starts a fresh budget rather than carrying old spend forward forever.
+
+    A rolling window (not calendar-aligned) counted back from now: "daily" means the last
+    24 hours, not since midnight. Simpler and avoids timezone/calendar-boundary edge cases,
+    while still solving the actual problem -- a purchase from days ago stops counting."""
+    query = (
         db.query(func.sum(Transaction.amount))
         .join(AgentAction, Transaction.agent_action_id == AgentAction.id)
         .filter(AgentAction.mandate_id == mandate_id, AgentAction.result == AgentResult.success)
-        .scalar()
     )
+    duration = WINDOW_DURATIONS.get(window)
+    if duration is not None:
+        cutoff = datetime.datetime.utcnow() - duration
+        query = query.filter(Transaction.created_at >= cutoff)
+    total = query.scalar()
     return total or 0.0
 
 
@@ -136,13 +154,28 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             "Checked merchant against mandate allow-list.", input_data, mandate.id,
         )
 
-    already_spent = _cumulative_spend(db, mandate.id)
-    if already_spent + requested_amount > mandate.spend_ceiling:
+    if mandate.per_transaction_cap is not None and requested_amount > mandate.per_transaction_cap:
         return _blocked(
             db, merchant.id, requester,
-            f"Requested ₹{requested_amount:g} plus ₹{already_spent:g} already spent under this "
-            f"mandate would exceed its ceiling of ₹{mandate.spend_ceiling:g}.",
-            "Checked requested amount plus cumulative spend against mandate spend ceiling.", input_data, mandate.id,
+            f"Requested ₹{requested_amount:g} exceeds the mandate's per-transaction cap of "
+            f"₹{mandate.per_transaction_cap:g} — this is checked independently of the total "
+            "budget, so a single large purchase can't slip through just because the window "
+            "total has room.",
+            "Checked requested amount against mandate per-transaction cap.", input_data, mandate.id,
+        )
+
+    already_spent = _cumulative_spend(db, mandate.id, mandate.window)
+    if already_spent + requested_amount > mandate.spend_ceiling:
+        window_label = {
+            MandateWindow.daily: "today",
+            MandateWindow.weekly: "this week",
+            MandateWindow.monthly: "this month",
+        }.get(mandate.window, "so far under this mandate")
+        return _blocked(
+            db, merchant.id, requester,
+            f"Requested ₹{requested_amount:g} plus ₹{already_spent:g} already spent {window_label} "
+            f"would exceed the mandate's ceiling of ₹{mandate.spend_ceiling:g}.",
+            "Checked requested amount plus windowed cumulative spend against mandate spend ceiling.", input_data, mandate.id,
         )
 
     if abs(requested_amount - item.price) > PRICE_TOLERANCE:

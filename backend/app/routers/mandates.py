@@ -38,6 +38,8 @@ def set_mandate(body: MandateIn, db: Session = Depends(get_db)):
     mandate = Mandate(
         merchant_id=body.merchant_id,
         spend_ceiling=body.spend_ceiling,
+        per_transaction_cap=body.per_transaction_cap,
+        window=body.window,
         allow_listed_merchants=body.allow_listed_merchants,
         created_by=body.created_by,
     )
