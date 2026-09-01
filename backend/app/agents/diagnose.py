@@ -5,13 +5,28 @@ reproducible run-to-run during the demo — the spec allows an LLM-assisted qual
 flag as an option, but a flaky/non-deterministic Diagnose score would undermine the
 "score improves after Fix" narrative the demo depends on.
 """
+from collections import Counter
+
 from sqlalchemy.orm import Session
 
 from app.models import AgentAction, AgentResult, CatalogItem, CatalogManifest, Mandate, Merchant
 
 MIN_DESCRIPTION_LEN = 15
 
-CHECK_WEIGHT = 25  # 4 checks x 25 = 100
+# Weighted by how much each gap actually blocks an AI shopping agent: no feed or no
+# checkout means the agent can't act at all, so those two anchor the rubric. Clarity
+# (can it tell what it would actually be buying) matters more than disambiguation
+# (can it tell two listings apart), which matters more than prose quality -- most
+# real catalogs already have descriptions, so that's no longer the differentiator it
+# once was. Imagery helps a human confirm the agent's pick but isn't itself a blocker.
+CHECK_WEIGHTS = {
+    "agent_readable_feed": 25,
+    "programmatic_checkout": 25,
+    "price_availability_clarity": 20,
+    "name_disambiguation": 15,
+    "product_descriptions": 10,
+    "product_imagery": 5,
+}
 
 
 def _description_ok(item: CatalogItem) -> bool:
@@ -33,6 +48,27 @@ def _clarity_ok(item: CatalogItem) -> bool:
     return True
 
 
+def _imagery_ok(item: CatalogItem) -> bool:
+    return bool(item.image_url)
+
+
+def _fractional_check(check_name: str, items: list[CatalogItem], predicate, fail_detail_suffix: str, pass_detail_suffix: str) -> tuple[float, dict]:
+    total = len(items)
+    passed = sum(1 for i in items if predicate(i)) if total else 0
+    failed = total - passed
+    fraction = (passed / total) if total else 0
+    gap = {
+        "check_name": check_name,
+        "status": "pass" if failed == 0 and total > 0 else "fail",
+        "detail": (
+            f"{failed} of {total} {fail_detail_suffix}"
+            if failed > 0
+            else f"All {total} {pass_detail_suffix}"
+        ),
+    }
+    return fraction, gap
+
+
 def run_diagnose(db: Session, merchant: Merchant) -> dict:
     items: list[CatalogItem] = merchant.catalog_items
     total = len(items)
@@ -40,28 +76,18 @@ def run_diagnose(db: Session, merchant: Merchant) -> dict:
     gaps = []
     score = 0.0
 
-    # Check 1: description completeness/quality
-    if total == 0:
-        desc_pass = 0
-    else:
-        desc_pass = sum(1 for i in items if _description_ok(i))
-    desc_fail = total - desc_pass
-    desc_fraction = (desc_pass / total) if total else 0
-    score += CHECK_WEIGHT * desc_fraction
-    gaps.append(
-        {
-            "check_name": "product_descriptions",
-            "status": "pass" if desc_fail == 0 and total > 0 else "fail",
-            "detail": (
-                f"{desc_fail} of {total} products have no description or a description "
-                "too thin to be useful to a shopping agent."
-                if desc_fail > 0
-                else f"All {total} products have usable descriptions."
-            ),
-        }
+    # Check: description completeness/quality
+    desc_fraction, desc_gap = _fractional_check(
+        "product_descriptions",
+        items,
+        _description_ok,
+        "products have no description or a description too thin to be useful to a shopping agent.",
+        "products have usable descriptions.",
     )
+    score += CHECK_WEIGHTS["product_descriptions"] * desc_fraction
+    gaps.append(desc_gap)
 
-    # Check 2: machine-readable manifest/feed exists
+    # Check: machine-readable manifest/feed exists
     latest_manifest = (
         db.query(CatalogManifest)
         .filter(CatalogManifest.merchant_id == merchant.id)
@@ -69,7 +95,7 @@ def run_diagnose(db: Session, merchant: Merchant) -> dict:
         .first()
     )
     if latest_manifest:
-        score += CHECK_WEIGHT
+        score += CHECK_WEIGHTS["agent_readable_feed"]
         gaps.append(
             {
                 "check_name": "agent_readable_feed",
@@ -87,32 +113,45 @@ def run_diagnose(db: Session, merchant: Merchant) -> dict:
             }
         )
 
-    # Check 3: price / availability / variant clarity
-    if total == 0:
-        clarity_pass = 0
-    else:
-        clarity_pass = sum(1 for i in items if _clarity_ok(i))
-    clarity_fail = total - clarity_pass
-    clarity_fraction = (clarity_pass / total) if total else 0
-    score += CHECK_WEIGHT * clarity_fraction
-    gaps.append(
-        {
-            "check_name": "price_availability_clarity",
-            "status": "pass" if clarity_fail == 0 and total > 0 else "fail",
-            "detail": (
-                f"{clarity_fail} of {total} products have ambiguous availability or "
-                "missing variant info."
-                if clarity_fail > 0
-                else f"All {total} products have unambiguous availability and variant info."
-            ),
-        }
+    # Check: price / availability / variant clarity
+    clarity_fraction, clarity_gap = _fractional_check(
+        "price_availability_clarity",
+        items,
+        _clarity_ok,
+        "products have ambiguous availability or missing variant info.",
+        "products have unambiguous availability and variant info.",
     )
+    score += CHECK_WEIGHTS["price_availability_clarity"] * clarity_fraction
+    gaps.append(clarity_gap)
 
-    # Check 4: programmatic checkout available (merchant allow-listed under an active mandate)
+    # Check: name disambiguation (no two products share an exact name)
+    name_counts = Counter(i.name for i in items)
+    name_fraction, name_gap = _fractional_check(
+        "name_disambiguation",
+        items,
+        lambda i: name_counts[i.name] == 1,
+        "products share their name exactly with another product, making them indistinguishable to a shopping agent.",
+        "products have a name that uniquely identifies them.",
+    )
+    score += CHECK_WEIGHTS["name_disambiguation"] * name_fraction
+    gaps.append(name_gap)
+
+    # Check: product imagery
+    imagery_fraction, imagery_gap = _fractional_check(
+        "product_imagery",
+        items,
+        _imagery_ok,
+        "products have no product image, leaving a shopping agent nothing to show a buyer.",
+        "products have a product image.",
+    )
+    score += CHECK_WEIGHTS["product_imagery"] * imagery_fraction
+    gaps.append(imagery_gap)
+
+    # Check: programmatic checkout available (merchant allow-listed under an active mandate)
     mandates = db.query(Mandate).all()
     checkout_available = any(merchant.id in (m.allow_listed_merchants or []) for m in mandates)
     if checkout_available:
-        score += CHECK_WEIGHT
+        score += CHECK_WEIGHTS["programmatic_checkout"]
         gaps.append(
             {
                 "check_name": "programmatic_checkout",
@@ -131,10 +170,11 @@ def run_diagnose(db: Session, merchant: Merchant) -> dict:
         )
 
     reasoning = (
-        f"Scored {merchant.name}: {desc_pass}/{total} products have usable descriptions, "
+        f"Scored {merchant.name}: "
         f"{'a manifest exists' if latest_manifest else 'no manifest exists'}, "
-        f"{clarity_pass}/{total} products are unambiguous on availability/variants, "
-        f"programmatic checkout is {'available' if checkout_available else 'not available'}. "
+        f"programmatic checkout is {'available' if checkout_available else 'not available'}, "
+        f"clarity {round(clarity_fraction * 100)}%, names unique {round(name_fraction * 100)}%, "
+        f"descriptions {round(desc_fraction * 100)}%, imagery {round(imagery_fraction * 100)}%. "
         f"Final score: {round(score, 1)}/100."
     )
 
@@ -143,7 +183,7 @@ def run_diagnose(db: Session, merchant: Merchant) -> dict:
             agent_name="Diagnose",
             merchant_id=merchant.id,
             reasoning=reasoning,
-            action_taken="Scored catalog agent-readability against the 4-check rubric.",
+            action_taken="Scored catalog agent-readability against the 6-check rubric.",
             input={"merchant_id": merchant.id, "catalog_item_count": total},
             output={"score": round(score, 1), "gaps": gaps},
             result=AgentResult.success,
