@@ -2,7 +2,17 @@ from unittest.mock import patch
 
 from app.agents.catalog_import import import_store
 from app.agents.catalog_sources import SOURCES
-from app.models import AgentAction, AgentResult, CatalogItem, Mandate, Merchant, Transaction, TransactionStatus
+from app.agents.fix import publish_manifest
+from app.models import (
+    AgentAction,
+    AgentResult,
+    CatalogItem,
+    CatalogManifest,
+    Mandate,
+    Merchant,
+    Transaction,
+    TransactionStatus,
+)
 
 
 def _product(**overrides):
@@ -115,3 +125,44 @@ def test_reconnect_does_not_delete_a_transacted_item(db_session):
     assert "Old Shirt" in names  # the transacted item survives untouched
     assert "New Shirt" in names  # the fresh pull is still added
     assert db_session.query(Transaction).filter(Transaction.catalog_item_id == item.id).count() == 1
+
+
+def test_resync_republishes_an_already_published_manifest(db_session):
+    """A resync replaces catalog item rows with fresh ones (new ids), which silently
+    strands any manifest published before the resync -- most of its item_ids no
+    longer resolve to anything, so a shopping agent reading it sees almost nothing.
+    Since the merchant already chose to publish once, a resync must keep that
+    manifest in sync automatically rather than leaving it broken until they notice
+    and manually republish."""
+    first = _import(db_session, products=[_product(name="Shirt A"), _product(name="Shirt B")])
+    merchant = db_session.get(Merchant, first["merchant_id"])
+    publish_manifest(db_session, merchant)
+    db_session.flush()  # the real router commits here; this test stands in for that
+
+    _import(db_session, products=[_product(name="Shirt A"), _product(name="Shirt C")])
+
+    manifests = (
+        db_session.query(CatalogManifest)
+        .filter(CatalogManifest.merchant_id == first["merchant_id"])
+        .order_by(CatalogManifest.version.desc())
+        .all()
+    )
+    assert len(manifests) == 2  # the resync published a new version, not zero
+
+    latest = manifests[0]
+    current_item_ids = {
+        i.id for i in db_session.query(CatalogItem).filter(CatalogItem.merchant_id == first["merchant_id"])
+    }
+    assert set(latest.item_ids) == current_item_ids
+
+
+def test_resync_does_not_publish_a_manifest_that_never_existed(db_session):
+    """A first-time import (or a merchant that was never published) must not gain a
+    manifest just because it happens to get resynced -- publishing is still the
+    merchant's own deliberate action for a catalog that was never live."""
+    first = _import(db_session, products=[_product(name="Shirt A")])
+
+    _import(db_session, products=[_product(name="Shirt A"), _product(name="Shirt B")])
+
+    count = db_session.query(CatalogManifest).filter(CatalogManifest.merchant_id == first["merchant_id"]).count()
+    assert count == 0

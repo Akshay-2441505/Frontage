@@ -17,6 +17,13 @@ descriptions, manual price edits) -- accepted trade-off for staying in sync
 with the merchant's real, live catalog rather than a stale snapshot. The
 mandate is never touched by a resync, so a human-adjusted spend ceiling
 survives.
+
+Replacing catalog items also means a manifest published before the resync
+now names ids that mostly no longer exist -- a shopping agent reading it
+would see almost nothing of the real catalog. If the merchant had already
+published once, a resync republishes automatically so that manifest never
+goes silently stale; a merchant who never published is left alone, since
+publishing the first time is still their own deliberate action.
 """
 import json
 
@@ -25,7 +32,8 @@ from sqlalchemy.orm import Session
 from app.agents.catalog_sources import SOURCES, CatalogFetchError
 from app.agents.catalog_sources.shopify import normalize_store_url
 from app.agents.diagnose import _description_ok
-from app.models import CatalogItem, ItemSource, Mandate, Merchant, Transaction
+from app.agents.fix import publish_manifest
+from app.models import CatalogItem, CatalogManifest, ItemSource, Mandate, Merchant, Transaction
 
 
 def _signature(name, description, price, availability, variant_info, has_variants, image_url, image_urls) -> tuple:
@@ -118,6 +126,18 @@ def import_store(db: Session, source_name: str, store_url: str, merchant_name: s
         items = [_build_catalog_item(existing.id, currency, p) for p in products]
         db.add_all(items)
         db.flush()
+        # existing.catalog_items was already loaded above (for old_signatures) and the
+        # delete/insert above don't update that cached collection on their own -- expire
+        # it so both publish_manifest() and the item_count below see the fresh rows.
+        db.expire(existing, ["catalog_items"])
+
+        was_published = (
+            db.query(CatalogManifest).filter(CatalogManifest.merchant_id == existing.id).first()
+            is not None
+        )
+        if was_published:
+            publish_manifest(db, existing)
+            db.flush()
 
         return {
             "merchant_id": existing.id,
