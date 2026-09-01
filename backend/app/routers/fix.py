@@ -92,6 +92,7 @@ def get_manifest(merchant_id: str, db: Session = Depends(get_db)):
                 "currency": i.currency,
                 "availability": i.availability,
                 "variant_info": i.variant_info,
+                "image_url": i.image_url,
             }
             for i in items
         ],

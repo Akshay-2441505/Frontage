@@ -11,7 +11,7 @@ def _fake_completion(payload: dict):
     return completion
 
 
-def _published_merchant(db_session, merchant):
+def _published_merchant(db_session, merchant, image_url=None):
     item = CatalogItem(
         merchant_id=merchant.id,
         name="Real Product",
@@ -20,6 +20,7 @@ def _published_merchant(db_session, merchant):
         currency="INR",
         availability="in_stock",
         agent_readable=True,
+        image_url=image_url,
     )
     db_session.add(item)
     db_session.flush()
@@ -71,3 +72,17 @@ def test_ambiguous_response_with_real_candidates_still_returns_them(db_session, 
     assert result["status"] == "ambiguous"
     assert len(result["candidates"]) == 1
     assert result["candidates"][0]["id"] == item.id
+
+
+def test_selected_product_includes_image_url(db_session, merchant):
+    item = _published_merchant(db_session, merchant, image_url="https://cdn.example.com/shoe.jpg")
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Exact match."}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.shop(db_session, merchant, "the real product")
+
+    assert result["selected_product"]["image_url"] == "https://cdn.example.com/shoe.jpg"

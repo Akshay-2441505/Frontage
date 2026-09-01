@@ -70,6 +70,9 @@ class CatalogItem(Base):
     # choice to make) has nothing to disambiguate, so missing variant_info isn't a real
     # gap for it; a multi-variant product with no captured variant_info is a real gap.
     has_variants: Mapped[bool] = mapped_column(Boolean, default=True)
+    # A direct, publicly-hosted image URL -- Shopify's public product feed exposes this
+    # (images[].src) for real imports; seed/manual items simply won't have one.
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     agent_readable: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[ItemSource] = mapped_column(Enum(ItemSource), default=ItemSource.manual)
 

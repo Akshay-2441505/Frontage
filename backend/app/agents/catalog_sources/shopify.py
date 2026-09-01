@@ -75,6 +75,8 @@ class ShopifySource:
         # managed to label it well. Exactly one variant is Shopify's own signal for a
         # single-SKU product -- nothing to disambiguate, not a data gap.
         has_variants = len(variants) > 1
+        images = product.get("images") or []
+        image_url = images[0].get("src") if images and images[0].get("src") else None
 
         return {
             "name": product.get("title") or "Untitled product",
@@ -83,6 +85,7 @@ class ShopifySource:
             "availability": "in_stock" if any_in_stock else "out_of_stock",
             "variant_info": variant_info,
             "has_variants": has_variants,
+            "image_url": image_url,
         }
 
     def _extract_variant_info(self, product: dict, variants: list[dict]) -> dict | None:

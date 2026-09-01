@@ -41,6 +41,7 @@ def import_store(db: Session, source_name: str, store_url: str, merchant_name: s
             availability=p["availability"],
             variant_info=p["variant_info"],
             has_variants=p.get("has_variants", True),
+            image_url=p.get("image_url"),
             source=ItemSource.manual,  # real merchant-authored data, not LLM-generated
         )
         item.agent_readable = _description_ok(item) and item.availability is not None
