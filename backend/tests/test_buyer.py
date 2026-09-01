@@ -11,7 +11,7 @@ def _fake_completion(payload: dict):
     return completion
 
 
-def _published_merchant(db_session, merchant, image_url=None):
+def _published_merchant(db_session, merchant, image_url=None, image_urls=None):
     item = CatalogItem(
         merchant_id=merchant.id,
         name="Real Product",
@@ -21,6 +21,7 @@ def _published_merchant(db_session, merchant, image_url=None):
         availability="in_stock",
         agent_readable=True,
         image_url=image_url,
+        image_urls=image_urls,
     )
     db_session.add(item)
     db_session.flush()
@@ -86,3 +87,24 @@ def test_selected_product_includes_image_url(db_session, merchant):
         result = buyer_mod.shop(db_session, merchant, "the real product")
 
     assert result["selected_product"]["image_url"] == "https://cdn.example.com/shoe.jpg"
+
+
+def test_selected_product_includes_all_image_urls(db_session, merchant):
+    item = _published_merchant(
+        db_session, merchant,
+        image_url="https://cdn.example.com/shoe-1.jpg",
+        image_urls=["https://cdn.example.com/shoe-1.jpg", "https://cdn.example.com/shoe-2.jpg"],
+    )
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Exact match."}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.shop(db_session, merchant, "the real product")
+
+    assert result["selected_product"]["image_urls"] == [
+        "https://cdn.example.com/shoe-1.jpg",
+        "https://cdn.example.com/shoe-2.jpg",
+    ]

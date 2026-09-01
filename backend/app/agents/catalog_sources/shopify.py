@@ -21,7 +21,7 @@ def _strip_html(raw: str | None) -> str | None:
     return text or None
 
 
-def _normalize_store_url(store_url: str) -> str:
+def normalize_store_url(store_url: str) -> str:
     store_url = store_url.strip()
     if not store_url.startswith("http"):
         store_url = f"https://{store_url}"
@@ -37,7 +37,7 @@ class ShopifySource:
     storefront feature, not scraping in the fragile-HTML-parsing sense."""
 
     def fetch_products(self, store_url: str, limit: int = 25) -> list[dict]:
-        base = _normalize_store_url(store_url)
+        base = normalize_store_url(store_url)
         url = f"{base}/products.json?limit={min(limit, 250)}"
 
         try:
@@ -76,7 +76,8 @@ class ShopifySource:
         # single-SKU product -- nothing to disambiguate, not a data gap.
         has_variants = len(variants) > 1
         images = product.get("images") or []
-        image_url = images[0].get("src") if images and images[0].get("src") else None
+        image_urls = [img.get("src") for img in images if img.get("src")]
+        image_url = image_urls[0] if image_urls else None
 
         return {
             "name": product.get("title") or "Untitled product",
@@ -86,6 +87,7 @@ class ShopifySource:
             "variant_info": variant_info,
             "has_variants": has_variants,
             "image_url": image_url,
+            "image_urls": image_urls or None,
         }
 
     def _extract_variant_info(self, product: dict, variants: list[dict]) -> dict | None:

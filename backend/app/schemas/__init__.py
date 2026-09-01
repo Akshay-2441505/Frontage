@@ -17,6 +17,7 @@ class CatalogItemOut(BaseModel):
     variant_info: dict | None
     has_variants: bool
     image_url: str | None
+    image_urls: list[str] | None
     agent_readable: bool
     source: str
 

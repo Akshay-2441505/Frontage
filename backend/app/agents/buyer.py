@@ -75,6 +75,7 @@ def _manifest_products(db: Session, merchant: Merchant) -> list[dict]:
             "availability": i.availability,
             "variant_info": i.variant_info,
             "image_url": i.image_url,
+            "image_urls": i.image_urls,
         }
         for i in items
     ]

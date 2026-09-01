@@ -50,6 +50,10 @@ class Merchant(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     razorpay_account_ref: Mapped[str | None] = mapped_column(String, nullable=True)
     catalog_source: Mapped[str] = mapped_column(String, default="seed")
+    # Normalized scheme://host of the store this merchant was imported from (None for
+    # seed/manual merchants). Lets a reconnect find the same merchant instead of creating
+    # a duplicate -- see import_store() in catalog_import.py.
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     catalog_items: Mapped[list["CatalogItem"]] = relationship(back_populates="merchant", cascade="all, delete-orphan")
 
@@ -73,6 +77,10 @@ class CatalogItem(Base):
     # A direct, publicly-hosted image URL -- Shopify's public product feed exposes this
     # (images[].src) for real imports; seed/manual items simply won't have one.
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The full set of image URLs Shopify exposed for this product (image_url is just
+    # image_urls[0]) -- kept separate so every existing caller of image_url is unaffected;
+    # only surfaces that actually want multiple images (Otto's product carousel) read this.
+    image_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)
     agent_readable: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[ItemSource] = mapped_column(Enum(ItemSource), default=ItemSource.manual)
 
