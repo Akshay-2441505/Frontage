@@ -125,6 +125,44 @@ def _blocked(db: Session, merchant_id: str, requester: str, reasoning: str, acti
     return {"status": "blocked", "reason": reasoning, "agent_action_id": action.id}
 
 
+# Razorpay payment link statuses -> our own TransactionStatus. "created"/"partially_paid"
+# are still in flight so the stored status is left alone; only a terminal outcome
+# (paid, or definitively not going to be paid) is worth persisting.
+_RAZORPAY_STATUS_MAP = {
+    "paid": TransactionStatus.paid,
+    "cancelled": TransactionStatus.failed,
+    "expired": TransactionStatus.failed,
+}
+
+
+def check_transaction_status(db: Session, transaction_id: str) -> dict:
+    """Polls Razorpay for the live status of a transaction's payment link and updates
+    our own record if it has reached a terminal state. Read-only from the caller's
+    perspective otherwise -- a polling call that fails (misconfigured client, network
+    blip, Razorpay outage) must never raise; it just reports whatever status is
+    already on file, and a later poll can try again."""
+    transaction = db.get(Transaction, transaction_id)
+    if not transaction:
+        raise ValueError("Transaction not found")
+
+    if not transaction.razorpay_payment_link_id:
+        return {"transaction_id": transaction.id, "status": transaction.status.value}
+
+    try:
+        client = get_client()
+        link = client.payment_link.fetch(transaction.razorpay_payment_link_id)
+        razorpay_status = link.get("status")
+    except Exception:  # noqa: BLE001 - a failed poll reports stale status, not an error
+        return {"transaction_id": transaction.id, "status": transaction.status.value}
+
+    new_status = _RAZORPAY_STATUS_MAP.get(razorpay_status)
+    if new_status is not None and new_status != transaction.status:
+        transaction.status = new_status
+        db.flush()
+
+    return {"transaction_id": transaction.id, "status": transaction.status.value}
+
+
 def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float, requester: str = "BuyerAgent") -> dict:
     item = db.get(CatalogItem, catalog_item_id)
     if not item:
