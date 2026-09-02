@@ -11,7 +11,7 @@ def _fake_completion(payload: dict):
     return completion
 
 
-def _published_merchant(db_session, merchant, image_url=None, image_urls=None):
+def _published_merchant(db_session, merchant, image_url=None, image_urls=None, variant_info=None):
     item = CatalogItem(
         merchant_id=merchant.id,
         name="Real Product",
@@ -22,6 +22,7 @@ def _published_merchant(db_session, merchant, image_url=None, image_urls=None):
         agent_readable=True,
         image_url=image_url,
         image_urls=image_urls,
+        variant_info=variant_info,
     )
     db_session.add(item)
     db_session.flush()
@@ -73,6 +74,103 @@ def test_ambiguous_response_with_real_candidates_still_returns_them(db_session, 
     assert result["status"] == "ambiguous"
     assert len(result["candidates"]) == 1
     assert result["candidates"][0]["id"] == item.id
+
+
+def test_ambiguous_candidates_include_variant_info(db_session, merchant):
+    """The frontend's comparison table reads variant_info straight off each candidate
+    with no backend change of its own -- this locks in that _manifest_products() keeps
+    carrying it, so a future refactor there can't silently break that table."""
+    item = _published_merchant(db_session, merchant, variant_info={"size": ["S", "M", "L"]})
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {
+            "status": "ambiguous",
+            "candidate_ids": [item.id],
+            "reasoning": "Multiple variants match.",
+        }
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.shop(db_session, merchant, "vague but real goal")
+
+    assert result["candidates"][0]["variant_info"] == {"size": ["S", "M", "L"]}
+
+
+def test_need_more_info_status_returns_clarifying_question(db_session, merchant):
+    _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "need_more_info", "reasoning": "What's your budget?"}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.shop(db_session, merchant, "best product")
+
+    assert result["status"] == "need_more_info"
+    assert result["reasoning"] == "What's your budget?"
+
+
+def test_history_is_folded_into_the_llm_prompt(db_session, merchant):
+    item = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Answers the follow-up."}
+    )
+
+    history = [
+        {"goal": "best product", "status": "need_more_info", "reasoning": "What's your budget?"},
+    ]
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        buyer_mod.shop(db_session, merchant, "under 200 rupees", history=history)
+
+    call_args = fake_client.chat.completions.create.call_args
+    user_message = call_args.kwargs["messages"][1]["content"]
+    assert "best product" in user_message
+    assert "What's your budget?" in user_message
+
+
+def test_history_is_capped_to_the_last_n_turns(db_session, merchant):
+    item = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Match."}
+    )
+
+    history = [
+        {"goal": f"goal number {i}", "status": "need_more_info", "reasoning": f"question {i}"}
+        for i in range(10)
+    ]
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        buyer_mod.shop(db_session, merchant, "final goal", history=history)
+
+    call_args = fake_client.chat.completions.create.call_args
+    user_message = call_args.kwargs["messages"][1]["content"]
+    # Only the most recent turns should survive -- the earliest ones must not appear.
+    assert "goal number 0" not in user_message
+    assert "goal number 9" in user_message
+
+
+def test_shop_with_history_still_resolves_match(db_session, merchant):
+    item = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Exact match."}
+    )
+
+    history = [{"goal": "best product", "status": "need_more_info", "reasoning": "What's your budget?"}]
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.shop(db_session, merchant, "under 200 rupees", history=history)
+
+    assert result["status"] == "purchase_attempted"
+    assert result["selected_product"]["id"] == item.id
 
 
 def test_selected_product_includes_image_url(db_session, merchant):

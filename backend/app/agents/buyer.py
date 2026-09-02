@@ -20,18 +20,28 @@ from app.models import AgentAction, AgentResult, CatalogItem, CatalogManifest, M
 SYSTEM_PROMPT = (
     "You are a shopping agent choosing a product from a merchant's catalog manifest to "
     "satisfy a buyer's goal. Respond with ONLY a JSON object, no other text, in exactly one "
-    "of these three shapes:\n"
+    "of these four shapes:\n"
     '- Exactly one product clearly satisfies the goal: '
     '{"status": "match", "selected_item_id": "<id>", "reasoning": "<one sentence>"}\n'
-    "- The goal is too vague and multiple different products satisfy it about equally well "
-    "(e.g. the goal names a style/collection/line but not which specific variant): "
+    "- The goal already narrows the catalog to a small, specific family -- it names a "
+    "style/collection/line/feature that only SOME products share (e.g. \"the X Lows\" "
+    "narrows to that shoe's colorways) -- but not which exact one: "
     '{"status": "ambiguous", "candidate_ids": ["<id>", "<id>", ...], '
     '"reasoning": "<one sentence explaining what needs to be narrowed down>"} '
     "(list at most 6 candidates)\n"
+    "- The goal is so bare that MORE THAN 6 different products would satisfy it about "
+    "equally well -- it doesn't point at any specific style, line, feature, or budget, just "
+    "a broad category (e.g. \"best TV\", \"recommend a watch\", \"I need a laptop\" alone): "
+    "do not dump a wall of unrelated candidates -- ask ONE short clarifying question instead "
+    "(budget, use case, or the one defining detail that would actually narrow it down): "
+    '{"status": "need_more_info", "reasoning": "<one short clarifying question>"}\n'
     "- Nothing in the catalog satisfies the goal: "
     '{"status": "no_match", "reasoning": "<one sentence>"}\n'
     "Never invent a product id that isn't in the manifest. Prefer \"match\" only when you're "
-    "confident the goal picks out one specific product, not a family of them."
+    "confident the goal picks out one specific product, not a family of them. If a "
+    "conversation history is given below, use it: if you already asked a clarifying question "
+    "and the buyer's current goal answers it, resolve to match/ambiguous/no_match using the "
+    "combined context -- never ask a second clarifying question in a row about the same thing."
 )
 
 
@@ -39,6 +49,29 @@ DESCRIPTION_PROMPT_CHARS = 150  # keep the LLM prompt small -- a full manifest o
 # products (long real descriptions, variant lists, pretty-printed) can push a bigger
 # catalog well past Groq's free-tier per-request token limit; the full data still goes
 # back to the caller for display, just not into the prompt.
+
+HISTORY_TURN_LIMIT = 3  # only the most recent turns matter for resolving a follow-up,
+# and folding in the whole conversation would eat further into the same token budget
+# DESCRIPTION_PROMPT_CHARS already protects.
+HISTORY_FIELD_CHARS = 200
+
+
+def _format_history(history: list[dict] | None) -> str:
+    """Turns the frontend's per-turn history into a short block the prompt can use to
+    resolve a follow-up goal. Capped server-side regardless of what the caller sends --
+    never trust the frontend's own cap alone."""
+    if not history:
+        return ""
+    lines = []
+    for turn in history[-HISTORY_TURN_LIMIT:]:
+        goal = str(turn.get("goal") or "")[:HISTORY_FIELD_CHARS]
+        status = turn.get("status")
+        line = f"Buyer said: {goal}"
+        if status:
+            reasoning = str(turn.get("reasoning") or "")[:HISTORY_FIELD_CHARS]
+            line += f" -> Agent ({status}): {reasoning}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _compact_for_prompt(products: list[dict]) -> list[dict]:
@@ -96,7 +129,7 @@ def _log(db: Session, merchant_id: str, goal: str, reasoning: str, action_taken:
     return action
 
 
-def shop(db: Session, merchant: Merchant, goal: str) -> dict:
+def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None = None) -> dict:
     products = _manifest_products(db, merchant)
     if not products:
         action = _log(
@@ -107,6 +140,14 @@ def shop(db: Session, merchant: Merchant, goal: str) -> dict:
         )
         return {"status": "no_manifest", "agent_action_id": action.id}
 
+    history_text = _format_history(history)
+    user_content = f"Shopping goal: {goal}\n\n"
+    if history_text:
+        user_content += f"Conversation so far:\n{history_text}\n\n"
+    user_content += (
+        f"Catalog manifest:\n{json.dumps(_compact_for_prompt(products), separators=(',', ':'))}"
+    )
+
     try:
         client = get_client()
         completion = client.chat.completions.create(
@@ -116,13 +157,7 @@ def shop(db: Session, merchant: Merchant, goal: str) -> dict:
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Shopping goal: {goal}\n\nCatalog manifest:\n"
-                        f"{json.dumps(_compact_for_prompt(products), separators=(',', ':'))}"
-                    ),
-                },
+                {"role": "user", "content": user_content},
             ],
         )
         raw = completion.choices[0].message.content.strip()
@@ -172,6 +207,16 @@ def shop(db: Session, merchant: Merchant, goal: str) -> dict:
             "candidates": candidates,
             "agent_action_id": action.id,
         }
+
+    if status == "need_more_info":
+        action = _log(
+            db, merchant.id, goal,
+            buyer_reasoning or f"'{goal}' doesn't give enough to narrow down a recommendation.",
+            "Determined the goal needs clarification before a product can be suggested.",
+            AgentResult.failed,
+            output={"clarifying_question": buyer_reasoning},
+        )
+        return {"status": "need_more_info", "goal": goal, "reasoning": buyer_reasoning, "agent_action_id": action.id}
 
     if status != "match" or not parsed.get("selected_item_id"):
         action = _log(

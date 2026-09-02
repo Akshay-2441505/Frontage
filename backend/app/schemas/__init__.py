@@ -130,6 +130,13 @@ class ImportStoreIn(BaseModel):
     limit: int = 25
 
 
+class ConversationTurnIn(BaseModel):
+    goal: str
+    status: str | None = None
+    reasoning: str | None = None
+
+
 class ShoppingGoalIn(BaseModel):
     merchant_id: str
     goal: str
+    history: list[ConversationTurnIn] = []
