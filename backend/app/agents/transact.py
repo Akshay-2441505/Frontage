@@ -19,6 +19,7 @@ limit, then fails closed"):
   request that's deterministically invalid just wastes time before failing anyway
 """
 import datetime
+import hashlib
 import logging
 import time
 
@@ -64,6 +65,17 @@ def _razorpay_safe_text(text: str) -> str:
     merchant-authored product names (e.g. imported from a live store) can contain
     these, so strip anything outside the BMP rather than let the whole purchase fail."""
     return "".join(ch for ch in text if ord(ch) <= 0xFFFF).strip()
+
+
+def _estimated_delivery_window(item_id: str) -> str:
+    """No real fulfillment/logistics system is wired up -- this is a clearly-labeled
+    simulated estimate, not a live one. Deterministic per item id (hashed, not random)
+    so the same purchase always reports the same window, matching demo/test
+    reproducibility rather than looking like a live tracking number."""
+    digest = int(hashlib.sha1(item_id.encode()).hexdigest(), 16)
+    start = 2 + (digest % 4)
+    end = start + 2 + (digest % 3)
+    return f"{start}-{end} business days (estimated)"
 
 
 def _active_mandate(db: Session, merchant_id: str) -> Mandate | None:
@@ -361,6 +373,7 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             "payment_link_url": payment_link.get("short_url") if payment_link else None,
             "payment_link_error": payment_link_error,
             "agent_action_id": action.id,
+            "estimated_delivery": _estimated_delivery_window(item.id),
         }
     except Exception as exc:  # noqa: BLE001 - the Razorpay order already succeeded; never lose that
         logger.error(
@@ -380,4 +393,5 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             "payment_link_error": payment_link_error,
             "agent_action_id": None,
             "local_record_error": str(exc),
+            "estimated_delivery": _estimated_delivery_window(item.id),
         }

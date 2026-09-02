@@ -29,3 +29,4 @@ def test_bookkeeping_failure_after_successful_order_does_not_raise(db_session, m
     # bookkeeping failed -- losing it entirely would hide that money-adjacent
     # state exists on Razorpay's side with nothing pointing back to it.
     assert result.get("razorpay_order_id") == "order_REAL_ORDER_ALREADY_CREATED"
+    assert result.get("estimated_delivery")
