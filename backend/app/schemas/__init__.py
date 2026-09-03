@@ -140,3 +140,8 @@ class ShoppingGoalIn(BaseModel):
     merchant_id: str
     goal: str
     history: list[ConversationTurnIn] = []
+
+
+class DiscoverGoalIn(BaseModel):
+    goal: str
+    history: list[ConversationTurnIn] = []

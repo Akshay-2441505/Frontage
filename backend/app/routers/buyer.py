@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.agents.buyer import shop
+from app.agents.buyer import discover, shop
 from app.db import get_db
 from app.models import Merchant
-from app.schemas import ShoppingGoalIn
+from app.schemas import DiscoverGoalIn, ShoppingGoalIn
 
 router = APIRouter(prefix="/buyer-agent", tags=["buyer"])
 
@@ -16,5 +16,13 @@ def buyer_shop(body: ShoppingGoalIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Merchant not found")
     history = [turn.model_dump() for turn in body.history]
     result = shop(db, merchant, body.goal, history=history)
+    db.commit()
+    return result
+
+
+@router.post("/discover")
+def buyer_discover(body: DiscoverGoalIn, db: Session = Depends(get_db)):
+    history = [turn.model_dump() for turn in body.history]
+    result = discover(db, body.goal, history=history)
     db.commit()
     return result
