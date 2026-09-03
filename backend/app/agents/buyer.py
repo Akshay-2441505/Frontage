@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.llm_client import REASONING_MODEL, get_client
 from app.agents.transact import attempt_purchase
-from app.models import AgentAction, AgentResult, CatalogItem, CatalogManifest, Merchant
+from app.models import AgentAction, AgentResult, CatalogItem, CatalogManifest, DiagnosticReport, Merchant
 
 SYSTEM_PROMPT = (
     "You are a shopping agent choosing a product from a merchant's catalog manifest to "
@@ -41,7 +41,12 @@ SYSTEM_PROMPT = (
     "confident the goal picks out one specific product, not a family of them. If a "
     "conversation history is given below, use it: if you already asked a clarifying question "
     "and the buyer's current goal answers it, resolve to match/ambiguous/no_match using the "
-    "combined context -- never ask a second clarifying question in a row about the same thing."
+    "combined context -- never ask a second clarifying question in a row about the same thing. "
+    "Each product may also include merchant_name and merchant_score (0-100, higher means the "
+    "merchant is better prepared for agents like you to shop from) -- when multiple products "
+    "from different merchants are similarly good matches for the goal, prefer the one from the "
+    "higher-scored merchant; treat a missing or null merchant_score as neutral, never as a low "
+    "score."
 )
 
 
@@ -75,8 +80,9 @@ def _format_history(history: list[dict] | None) -> str:
 
 
 def _compact_for_prompt(products: list[dict]) -> list[dict]:
-    return [
-        {
+    compact = []
+    for p in products:
+        entry = {
             "id": p["id"],
             "name": p["name"],
             "description": (p["description"] or "")[:DESCRIPTION_PROMPT_CHARS],
@@ -84,8 +90,11 @@ def _compact_for_prompt(products: list[dict]) -> list[dict]:
             "currency": p["currency"],
             "availability": p["availability"],
         }
-        for p in products
-    ]
+        if "merchant_name" in p:
+            entry["merchant_name"] = p["merchant_name"]
+            entry["merchant_score"] = p.get("merchant_score")
+        compact.append(entry)
+    return compact
 
 
 def _manifest_products(db: Session, merchant: Merchant) -> list[dict]:
@@ -274,3 +283,47 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
         return {"status": "no_manifest", "agent_action_id": action.id}
 
     return _resolve_goal(db, goal, history, products, default_merchant_id=merchant.id)
+
+
+def _all_discoverable_products(db: Session) -> list[dict]:
+    """Every product from every merchant with at least one published manifest, tagged
+    with which merchant it's from and that merchant's latest Diagnose score. Merchants
+    with no published manifest are silently absent -- the same "not agent-readable, not
+    found" rule that already applies within a single merchant's own catalog, just
+    applied across all of them."""
+    merchant_ids_with_manifest = {
+        row[0] for row in db.query(CatalogManifest.merchant_id).distinct()
+    }
+    if not merchant_ids_with_manifest:
+        return []
+
+    merchants = db.query(Merchant).filter(Merchant.id.in_(merchant_ids_with_manifest)).all()
+    combined: list[dict] = []
+    for m in merchants:
+        latest_report = (
+            db.query(DiagnosticReport)
+            .filter(DiagnosticReport.merchant_id == m.id)
+            .order_by(DiagnosticReport.timestamp.desc())
+            .first()
+        )
+        score = latest_report.score if latest_report else None
+        for p in _manifest_products(db, m):
+            p["merchant_id"] = m.id
+            p["merchant_name"] = m.name
+            p["merchant_score"] = score
+            combined.append(p)
+    return combined
+
+
+def discover(db: Session, goal: str, history: list[dict] | None = None) -> dict:
+    products = _all_discoverable_products(db)
+    if not products:
+        action = _log(
+            db, None, goal,
+            "No merchant has a published catalog manifest yet — nothing to discover from.",
+            "Attempted to fetch every merchant's catalog manifest.",
+            AgentResult.failed,
+        )
+        return {"status": "no_merchants", "agent_action_id": action.id}
+
+    return _resolve_goal(db, goal, history, products, default_merchant_id=None)

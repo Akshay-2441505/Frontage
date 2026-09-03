@@ -2,7 +2,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import app.agents.buyer as buyer_mod
-from app.models import CatalogItem, CatalogManifest
+from app.models import AgentAction, CatalogItem, CatalogManifest, DiagnosticReport, Merchant
 
 
 def _fake_completion(payload: dict):
@@ -206,3 +206,112 @@ def test_selected_product_includes_all_image_urls(db_session, merchant):
         "https://cdn.example.com/shoe-1.jpg",
         "https://cdn.example.com/shoe-2.jpg",
     ]
+
+
+def test_discover_combines_products_across_merchants(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    merchant2 = Merchant(name="Second Store", catalog_source="test")
+    db_session.add(merchant2)
+    db_session.flush()
+    item2 = _published_merchant(db_session, merchant2)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {
+            "status": "ambiguous",
+            "candidate_ids": [item1.id, item2.id],
+            "reasoning": "Both stores sell a matching product.",
+        }
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.discover(db_session, "something vague")
+
+    assert result["status"] == "ambiguous"
+    ids = {c["id"] for c in result["candidates"]}
+    assert ids == {item1.id, item2.id}
+    names = {c["merchant_name"] for c in result["candidates"]}
+    assert names == {"Test Merchant", "Second Store"}
+
+
+def test_discover_skips_merchants_without_a_published_manifest(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    merchant2 = Merchant(name="No Manifest Store", catalog_source="test")
+    db_session.add(merchant2)
+    db_session.flush()
+    unpublished = CatalogItem(
+        merchant_id=merchant2.id,
+        name="Invisible Product",
+        description="Should never surface via discover() -- no manifest published.",
+        price=50.0,
+        currency="INR",
+        availability="in_stock",
+        agent_readable=True,
+    )
+    db_session.add(unpublished)
+    db_session.flush()
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item1.id, "reasoning": "Only real match."}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        buyer_mod.discover(db_session, "anything")
+
+    user_message = fake_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert "Invisible Product" not in user_message
+
+
+def test_discover_returns_no_merchants_when_nothing_published(db_session, merchant):
+    result = buyer_mod.discover(db_session, "anything")
+    assert result["status"] == "no_merchants"
+
+
+def test_discover_prompt_includes_merchant_name_and_score(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+    db_session.add(DiagnosticReport(merchant_id=merchant.id, score=87.0, gaps=[]))
+    db_session.flush()
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item1.id, "reasoning": "Match."}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        buyer_mod.discover(db_session, "anything")
+
+    user_message = fake_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert '"merchant_name":"Test Merchant"' in user_message
+    assert '"merchant_score":87.0' in user_message
+
+
+def test_discover_merchant_score_is_null_when_never_diagnosed(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item1.id, "reasoning": "Match."}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.discover(db_session, "anything")
+
+    assert result["selected_product"]["merchant_score"] is None
+
+
+def test_discover_logs_match_under_the_selected_merchant(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item1.id, "reasoning": "Match."}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.discover(db_session, "anything")
+
+    action = db_session.get(AgentAction, result["buyer_agent_action_id"])
+    assert action.merchant_id == merchant.id
