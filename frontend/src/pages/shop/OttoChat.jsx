@@ -46,10 +46,22 @@ function differentiators(candidates) {
   const counts = new Map()
   for (const sig of signatures) counts.set(sig, (counts.get(sig) || 0) + 1)
 
-  return candidates.map((c, i) => ({
-    unique: unique[i],
-    identical: counts.get(signatures[i]) > 1,
-  }))
+  return candidates.map((c, i) => {
+    const identical = counts.get(signatures[i]) > 1
+    // A same-name-same-price tie across DIFFERENT merchants is common and not
+    // confusing -- the merchant name alone tells them apart. A true same-merchant
+    // duplicate (e.g. Plum Goodness's exact-duplicate listings) still needs the
+    // catalog-id fallback, since two rows from the same store need something finer.
+    const identicalWithinSameMerchant =
+      identical &&
+      candidates.filter((other, j) => signatures[j] === signatures[i] && other.merchant_id === c.merchant_id).length > 1
+
+    return {
+      unique: unique[i],
+      identical,
+      identicalWithinSameMerchant,
+    }
+  })
 }
 
 const HISTORY_TURN_LIMIT = 3
@@ -174,6 +186,7 @@ function ProductCard({ product, chosen }) {
       {product.description && <p className="prod__note clamp-2">{product.description}</p>}
       <div className="prod__foot">
         <span className="prod__price">{formatMoney(product.price, product.currency)}</span>
+        {product.merchant_name && <span className="prod__merchant">{product.merchant_name}</span>}
         {product.availability && product.availability !== 'in_stock' && (
           <span className="pill pill--warn">{String(product.availability).replace(/_/g, ' ')}</span>
         )}
@@ -355,7 +368,7 @@ function Outcome({ purchase, product, merchantName, addressAlreadyConfirmed }) {
       </p>
       <p className="outcome__body">{purchase.reason}</p>
 
-      {blocked && <BudgetBreach product={product} />}
+      {blocked && <BudgetBreach product={product} merchantId={product?.merchant_id} />}
 
       <div className="ledger">
         <div className="ledger__row">
@@ -383,8 +396,7 @@ function Outcome({ purchase, product, merchantName, addressAlreadyConfirmed }) {
    marked partway along, so the request visibly runs past it. Renders nothing at
    all if the mandate or audit log can't be read — the prose reason above already
    carries the numbers, so there is no need to apologise for its absence. */
-function BudgetBreach({ product }) {
-  const { merchantId } = useMerchants()
+function BudgetBreach({ product, merchantId }) {
   const motionOK = useMotionOK()
   const [budget, setBudget] = useState(null)
 
@@ -454,7 +466,7 @@ function BudgetBreach({ product }) {
   )
 }
 
-function Turn({ turn, index, merchantName, onPick, onConfirmPurchase, busy }) {
+function Turn({ turn, index, onPick, onConfirmPurchase, busy }) {
   const turnMotionOK = useMotionOK()
 
   const { goal, result } = turn
@@ -476,11 +488,11 @@ function Turn({ turn, index, merchantName, onPick, onConfirmPurchase, busy }) {
             </span>
           )}
 
-          {result?.status === 'no_manifest' && (
+          {result?.status === 'no_merchants' && (
             <>
               <p>
-                {merchantName} hasn't published a catalog I can read, so there's nothing here for me
-                to shop. Everything they sell is invisible to me right now.
+                No store has published a catalog I can read yet, so there's nothing here for me
+                to shop at all.
               </p>
               <p>
                 <Link to="/merchant/fix" className="btn btn--ghost btn--sm">
@@ -496,27 +508,27 @@ function Turn({ turn, index, merchantName, onPick, onConfirmPurchase, busy }) {
           {result?.status === 'no_match' && (
             <p>
               {result.reasoning ||
-                `I read everything ${merchantName} publishes and nothing matches that. Try naming a product, or give me a budget.`}
+                "I read every store's published catalog and nothing matches that. Try naming a product, or give me a budget."}
             </p>
           )}
 
           {result?.status === 'invalid_selection' && (
             <p>
-              I picked something that turned out not to be in {merchantName}'s catalog, so I stopped
+              I picked something that turned out not to be in any published catalog, so I stopped
               rather than order a product that may not exist. Ask me again and I'll re-read the
-              catalog.
+              catalogs.
             </p>
           )}
 
           {result?.status === 'failed' && (
             <>
-              <p>I couldn't finish reading {merchantName}'s catalog, so I haven't bought anything.</p>
+              <p>I couldn't finish reading the catalogs, so I haven't bought anything.</p>
               {result.reason && <p className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{result.reason}</p>}
             </>
           )}
 
           {result?.status === 'ambiguous' && (
-            <Ambiguous result={result} merchantName={merchantName} onPick={onPick} busy={busy} />
+            <Ambiguous result={result} onPick={onPick} busy={busy} />
           )}
 
           {result?.status === 'address_confirm' && (
@@ -540,19 +552,20 @@ function Turn({ turn, index, merchantName, onPick, onConfirmPurchase, busy }) {
               variants={{ visible: { transition: { staggerChildren: STAGGER.loose } } }}
             >
               <motion.p variants={fadeRise}>
-                {result.buyer_reasoning || `Here's what I found at ${merchantName}.`}
+                {result.buyer_reasoning ||
+                  `Here's what I found at ${result.selected_product?.merchant_name || 'that store'}.`}
               </motion.p>
               <motion.div className="prod-rail" variants={fadeRise}>
                 <ProductCard product={result.selected_product} chosen />
               </motion.div>
               <motion.div variants={fadeRise}>
-                <Attribution merchantName={merchantName} />
+                <Attribution merchantName={result.selected_product?.merchant_name} />
               </motion.div>
               <motion.div variants={fadeRise}>
                 <Outcome
                   purchase={result.purchase_result}
                   product={result.selected_product}
-                  merchantName={merchantName}
+                  merchantName={result.selected_product?.merchant_name}
                   addressAlreadyConfirmed={result.addressAlreadyConfirmed}
                 />
               </motion.div>
@@ -598,6 +611,12 @@ function SpecCompare({ candidates, diffs, onPick, busy }) {
           </tr>
         </thead>
         <tbody>
+          <tr>
+            <th scope="row">Store</th>
+            {candidates.map((c) => (
+              <td key={c.id}>{c.merchant_name || '—'}</td>
+            ))}
+          </tr>
           {/* Choosing between two near-identical products off attribute rows alone is
               hard work when a photo settles it instantly. Only rendered when at least
               one candidate has an image, so photo-less stores keep a tight table. */}
@@ -649,7 +668,9 @@ function SpecCompare({ candidates, diffs, onPick, busy }) {
                 {diffs[i].unique.length > 0
                   ? diffs[i].unique.join(', ')
                   : diffs[i].identical
-                    ? `catalog id …${String(c.id).slice(-6)}`
+                    ? (diffs[i].identicalWithinSameMerchant
+                        ? `catalog id …${String(c.id).slice(-6)}`
+                        : c.merchant_name || `catalog id …${String(c.id).slice(-6)}`)
                     : '—'}
               </td>
             ))}
@@ -675,7 +696,7 @@ function SpecCompare({ candidates, diffs, onPick, busy }) {
   )
 }
 
-function Ambiguous({ result, merchantName, onPick, busy }) {
+function Ambiguous({ result, onPick, busy }) {
   const candidates = result.candidates || []
   const diffs = differentiators(candidates)
   const anyIdentical = diffs.some((d) => d.identical)
@@ -685,7 +706,7 @@ function Ambiguous({ result, merchantName, onPick, busy }) {
     <>
       <p>
         {result.reasoning ||
-          `${merchantName} sells several things that fit that. I'm not going to guess which one you meant.`}
+          "Multiple products fit that. I'm not going to guess which one you meant."}
       </p>
       {anyIdentical && (
         <p className="prod__note">
@@ -716,6 +737,9 @@ function Ambiguous({ result, merchantName, onPick, busy }) {
                 )}
                 <span className="disambig__main">
                   <span className="disambig__name">{candidate.name}</span>
+                  {candidate.merchant_name && (
+                    <span className="disambig__merchant">{candidate.merchant_name}</span>
+                  )}
                   <span className="disambig__diff">
                     {diff.unique.map((token) => (
                       <span key={token} className="disambig__tag">
@@ -724,7 +748,9 @@ function Ambiguous({ result, merchantName, onPick, busy }) {
                     ))}
                     {diff.identical && (
                       <span className="disambig__tag disambig__tag--same">
-                        catalog id …{String(candidate.id).slice(-6)}
+                        {diff.identicalWithinSameMerchant
+                          ? `catalog id …${String(candidate.id).slice(-6)}`
+                          : candidate.merchant_name || `catalog id …${String(candidate.id).slice(-6)}`}
                       </span>
                     )}
                     {candidate.availability && candidate.availability !== 'in_stock' && (
@@ -1055,7 +1081,6 @@ export default function OttoChat() {
                   <Turn
                     index={i}
                     turn={turn}
-                    merchantName={merchantName}
                     onPick={pick}
                     onConfirmPurchase={confirmPurchase}
                     busy={busy}
