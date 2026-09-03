@@ -1,4 +1,8 @@
-const BASE_URL = 'http://127.0.0.1:8000'
+export const BASE_URL = 'http://127.0.0.1:8000'
+
+/* The address an agent would actually fetch. Shown in the console so the
+   manifest reads as a real, reachable artifact rather than a blob of JSON. */
+export const manifestUrl = (merchantId) => `${BASE_URL}/merchants/${merchantId}/manifest.json`
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -32,12 +36,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ catalog_item_id: catalogItemId, requested_amount: requestedAmount }),
     }),
+  getTransactionStatus: (transactionId) => request(`/transact/${transactionId}/status`),
   getAuditLog: (merchantId) =>
     request(merchantId ? `/audit-log?merchant_id=${merchantId}` : '/audit-log'),
-  buyerShop: (merchantId, goal) =>
+  buyerShop: (merchantId, goal, history = []) =>
     request('/buyer-agent/shop', {
       method: 'POST',
-      body: JSON.stringify({ merchant_id: merchantId, goal }),
+      body: JSON.stringify({ merchant_id: merchantId, goal, history }),
+    }),
+  discover: (goal, history = []) =>
+    request('/buyer-agent/discover', {
+      method: 'POST',
+      body: JSON.stringify({ goal, history }),
     }),
   importStore: (storeUrl, merchantName, currency) =>
     request('/import', {
