@@ -129,17 +129,17 @@ def _log(db: Session, merchant_id: str, goal: str, reasoning: str, action_taken:
     return action
 
 
-def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None = None) -> dict:
-    products = _manifest_products(db, merchant)
-    if not products:
-        action = _log(
-            db, merchant.id, goal,
-            f"No published manifest available for {merchant.name} — nothing to shop from.",
-            "Attempted to fetch the catalog manifest.",
-            AgentResult.failed,
-        )
-        return {"status": "no_manifest", "agent_action_id": action.id}
-
+def _resolve_goal(
+    db: Session,
+    goal: str,
+    history: list[dict] | None,
+    products: list[dict],
+    default_merchant_id: str | None = None,
+) -> dict:
+    """Shared by shop() (one merchant) and discover() (every published merchant) --
+    this doesn't care where `products` came from, only that every id in it is real
+    and that `default_merchant_id` is a sensible thing to log against before a
+    specific merchant is known (None for discover(), the merchant's own id for shop())."""
     history_text = _format_history(history)
     user_content = f"Shopping goal: {goal}\n\n"
     if history_text:
@@ -164,7 +164,7 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
         parsed = json.loads(raw)
     except Exception as exc:  # noqa: BLE001 - fail closed if the LLM call/parse fails
         action = _log(
-            db, merchant.id, goal,
+            db, default_merchant_id, goal,
             f"Could not reason over the manifest for goal '{goal}': {exc}",
             "Called the LLM to select a product from the manifest.",
             AgentResult.failed,
@@ -184,7 +184,7 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
             # "ambiguous" with nothing to pick from is a dead end for the caller, so
             # treat it the same as no match rather than surfacing an empty picker.
             action = _log(
-                db, merchant.id, goal,
+                db, default_merchant_id, goal,
                 f"'{goal}' was flagged ambiguous, but none of the LLM's candidate ids matched "
                 "a real product in the manifest — treating as no match.",
                 "Validated ambiguous-status candidate ids against the manifest.",
@@ -194,7 +194,7 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
             return {"status": "no_match", "reasoning": buyer_reasoning, "agent_action_id": action.id}
 
         action = _log(
-            db, merchant.id, goal,
+            db, default_merchant_id, goal,
             buyer_reasoning or f"'{goal}' matches multiple products — refusing to guess which one.",
             f"Found {len(candidates)} equally-plausible candidates and stopped instead of picking one arbitrarily.",
             AgentResult.failed,
@@ -210,7 +210,7 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
 
     if status == "need_more_info":
         action = _log(
-            db, merchant.id, goal,
+            db, default_merchant_id, goal,
             buyer_reasoning or f"'{goal}' doesn't give enough to narrow down a recommendation.",
             "Determined the goal needs clarification before a product can be suggested.",
             AgentResult.failed,
@@ -220,7 +220,7 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
 
     if status != "match" or not parsed.get("selected_item_id"):
         action = _log(
-            db, merchant.id, goal,
+            db, default_merchant_id, goal,
             buyer_reasoning or f"No product in the manifest satisfies: {goal}",
             "Reasoned over the manifest and found no match.",
             AgentResult.failed,
@@ -232,7 +232,7 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
     selected = next((p for p in products if p["id"] == selected_id), None)
     if not selected:
         action = _log(
-            db, merchant.id, goal,
+            db, default_merchant_id, goal,
             f"The LLM selected item id {selected_id}, which is not in the manifest — refusing to proceed.",
             "Validated selected product id against the manifest.",
             AgentResult.failed,
@@ -240,8 +240,10 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
         )
         return {"status": "invalid_selection", "agent_action_id": action.id}
 
+    resolved_merchant_id = selected.get("merchant_id") or default_merchant_id
+
     action = _log(
-        db, merchant.id, goal,
+        db, resolved_merchant_id, goal,
         f"For goal '{goal}': {buyer_reasoning}",
         f"Selected {selected['name']} (₹{selected['price']:g}) from the manifest and requested purchase.",
         AgentResult.success,
@@ -258,3 +260,17 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
         "buyer_agent_action_id": action.id,
         "purchase_result": purchase_result,
     }
+
+
+def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None = None) -> dict:
+    products = _manifest_products(db, merchant)
+    if not products:
+        action = _log(
+            db, merchant.id, goal,
+            f"No published manifest available for {merchant.name} — nothing to shop from.",
+            "Attempted to fetch the catalog manifest.",
+            AgentResult.failed,
+        )
+        return {"status": "no_manifest", "agent_action_id": action.id}
+
+    return _resolve_goal(db, goal, history, products, default_merchant_id=merchant.id)
