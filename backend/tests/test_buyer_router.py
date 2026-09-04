@@ -114,3 +114,85 @@ def test_discover_endpoint_returns_no_merchants_when_nothing_published(client):
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "no_merchants"
+
+
+def _publish(db_session, merchant, items):
+    """A store is only discoverable once it has published a manifest."""
+    db_session.add(
+        CatalogManifest(
+            merchant_id=merchant.id, version=1, url=f"/m/{merchant.id}",
+            item_ids=[i.id for i in items],
+        )
+    )
+    for item in items:
+        item.agent_readable = True
+
+
+def test_showcase_spreads_across_stores_and_skips_photoless_products(client, db_session):
+    """The hero wall's whole claim is that one agent reads many catalogs. It used to
+    build itself from the first five merchants, two of which publish no photography at
+    all -- so they took slots, contributed nothing, and six stores could never appear."""
+    from app.models import CatalogItem, Merchant
+
+    stores = []
+    for n in range(4):
+        m = Merchant(name=f"Store {n}", catalog_source="seed")
+        db_session.add(m)
+        db_session.flush()
+        items = []
+        for k in range(3):
+            # Store 0 publishes nothing photographed; it must not take a slot.
+            item = CatalogItem(
+                merchant_id=m.id, name=f"S{n} item {k}",
+                description="A description long enough to be useful to a shopping agent.",
+                price=100.0 + k, currency="INR", availability="in_stock",
+                image_url=None if n == 0 else f"https://cdn.example.com/{n}-{k}.jpg",
+            )
+            db_session.add(item)
+            items.append(item)
+        db_session.flush()
+        _publish(db_session, m, items)
+        stores.append(m)
+    db_session.commit()
+
+    body = client.get("/buyer-agent/showcase?count=3").json()
+    products = body["products"]
+
+    assert len(products) == 3
+    assert all(p["image_url"] for p in products), "a photo wall cannot use photo-less products"
+    assert "Store 0" not in {p["merchant_name"] for p in products}
+    # One slot each: no single catalog may dominate the wall.
+    assert len({p["merchant_id"] for p in products}) == 3
+
+
+def test_showcase_exclude_and_feature_are_editorial_controls(client, db_session):
+    """Which stores belong on a hero wall, and how much room each gets, is a choice
+    about the shopfront rather than a fact about the catalog -- so it is passed in."""
+    from app.models import CatalogItem, Merchant
+
+    for name in ("Keep A", "Keep B", "Drop Me", "Star"):
+        m = Merchant(name=name, catalog_source="seed")
+        db_session.add(m)
+        db_session.flush()
+        items = [
+            CatalogItem(
+                merchant_id=m.id, name=f"{name} {k}",
+                description="A description long enough to be useful to a shopping agent.",
+                price=100.0 + k, currency="INR", availability="in_stock",
+                image_url=f"https://cdn.example.com/{name}-{k}.jpg",
+            )
+            for k in range(3)
+        ]
+        db_session.add_all(items)
+        db_session.flush()
+        _publish(db_session, m, items)
+    db_session.commit()
+
+    body = client.get("/buyer-agent/showcase?count=3&exclude=Drop Me&feature=Star").json()
+    names = [p["merchant_name"] for p in body["products"]]
+
+    assert "Drop Me" not in names
+    assert names.count("Star") == 2, "a featured store gets a second slot"
+    # The extra displaces the tail of the spread rather than growing the wall.
+    assert len(body["products"]) == 3
+    assert len({p["id"] for p in body["products"]}) == 3, "and does not repeat one product"

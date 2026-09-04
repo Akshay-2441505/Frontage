@@ -5,7 +5,6 @@ import { api } from '../../api'
 import { IconArrowRight, IconBag, IconCheck, IconChevron, IconClock, IconMapPin, IconMic, IconSend, IconSparkle } from '../../components/Icons'
 import HeroWall from '../../components/shop/HeroWall'
 import OttoField from '../../components/shop/OttoField'
-import { useMerchants } from '../../context/MerchantContext'
 import { AGENT_NAME } from '../../layouts/OttoLayout'
 import { formatMoney, initialOf } from '../../lib/format'
 import { useImageAspect } from '../../lib/useImageAspects'
@@ -980,50 +979,45 @@ function useSpeechToText(onResult) {
   return { isSupported, isListening, start, stop }
 }
 
-const HERO_SAMPLE_MERCHANT_LIMIT = 5
+/* Matches WALL_SLOTS in HeroWall: one product per slot, one store per product.
 
-/* The empty-state product wall used to show one selected merchant's catalog. With
-   no merchant picker anymore, it instead samples a few merchants' catalogs and
-   combines them -- which is a better fit for the wall's purpose anyway: it's the
-   first thing a visitor sees, and showing products from multiple stores is itself
-   a preview of what "search everywhere" means. Frontend-only, reuses the existing
-   per-merchant catalog endpoint rather than adding a new backend sampling route
-   for what's a purely cosmetic visualization. */
-function useCrossMerchantSample(merchants) {
-  const [sample, setSample] = useState([])
+   The two editorial choices below are about the shopfront, not the catalog, so
+   they live here rather than in the endpoint. MS Retro's catalog is licensed
+   sports jerseys, which read as a different shop from everything beside them.
+   5feet11 takes two slots because it is the only clothing store left once that
+   one is out, and a single garment among six watches, shoes and grooming bottles
+   does not read as "this agent can buy you clothes". */
+const WALL_SAMPLE_COUNT = 7
+const WALL_EXCLUDE = 'MS Retro Store'
+const WALL_FEATURE = '5feet11'
+
+/* The hero wall's products.
+
+   This used to fetch the first five merchants' catalogs and flatten them. Two of
+   those five publish no photography at all, so they occupied slots and
+   contributed nothing, and six of the eleven stores -- including both clothing
+   stores -- could never appear however good their catalogs were. A wall whose
+   entire point is "one agent reads every store" was drawing from three.
+
+   The backend now picks one photographed product per store, spread across the
+   whole list, in a single request. */
+function useShowcase() {
+  const [products, setProducts] = useState([])
 
   useEffect(() => {
-    if (!merchants || merchants.length === 0) {
-      setSample([])
-      return undefined
-    }
     let cancelled = false
-    const picked = merchants.slice(0, HERO_SAMPLE_MERCHANT_LIMIT)
-
-    /* The per-merchant catalog endpoint returns items, not their store's name --
-       it is scoped to one merchant, so it has never needed to repeat it. The wall
-       does need it, now that each card carries a store pin, and the hook already
-       knows which merchant it asked. Stamping it on here beats widening the
-       endpoint's response for one cosmetic consumer. */
-    Promise.all(picked.map((m) => api.getCatalog(m.id).catch(() => [])))
-      .then((lists) => {
-        if (cancelled) return
-        setSample(
-          lists.flatMap((items, i) =>
-            items.map((item) => ({
-              ...item,
-              merchant_name: item.merchant_name || picked[i].name,
-            })),
-          ),
-        )
+    api
+      .getShowcase({ count: WALL_SAMPLE_COUNT, exclude: WALL_EXCLUDE, feature: WALL_FEATURE })
+      .then((r) => {
+        if (!cancelled && Array.isArray(r?.products)) setProducts(r.products)
       })
-
+      .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [merchants])
+  }, [])
 
-  return sample
+  return products
 }
 
 /* The reach line under the greeting. Otto's whole claim is breadth -- one agent
@@ -1051,8 +1045,7 @@ function useReach() {
 }
 
 export default function OttoChat() {
-  const { merchants } = useMerchants()
-  const catalog = useCrossMerchantSample(merchants)
+  const catalog = useShowcase()
   const reach = useReach()
   const [goal, setGoal] = useState('')
   const [turns, setTurns] = useState([])

@@ -25,6 +25,16 @@ export const api = {
      Counted server-side from the same set discover() searches, so the hero's
      claim and the funnel's first number cannot drift apart. */
   getReach: () => request('/buyer-agent/reach'),
+
+  /* One photographed product from each of `count` different stores, for the
+     hero wall. Server-side so the page costs one request rather than one per
+     store -- a cost that would grow with the very breadth the wall advertises. */
+  getShowcase: ({ count = 7, exclude = '', feature = '' } = {}) =>
+    request(
+      `/buyer-agent/showcase?count=${count}` +
+        (exclude ? `&exclude=${encodeURIComponent(exclude)}` : '') +
+        (feature ? `&feature=${encodeURIComponent(feature)}` : ''),
+    ),
   runDiagnose: (id) => request(`/merchants/${id}/diagnose`, { method: 'POST' }),
   getLatestDiagnosis: (id) => request(`/merchants/${id}/diagnose/latest`),
   getDiagnosisHistory: (id) => request(`/merchants/${id}/diagnose/history`),
