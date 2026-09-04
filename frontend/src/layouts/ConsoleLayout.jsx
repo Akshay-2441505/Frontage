@@ -163,8 +163,16 @@ export default function ConsoleLayout() {
     <ThemeProvider zone="console" defaultTheme="dark">
       <ConsoleContext.Provider value={value}>
         <div className="console zone-enter">
+          {/* Ten rail tab-stops stand between the top of the page and the
+              content, on every route. A keyboard or screen-reader visitor was
+              walking all ten again after each navigation. Visually hidden until
+              focused, which is the one case where hiding a control is correct:
+              it is there for the people who can reach it. */}
+          <a href="#console-main" className="skip-link">
+            Skip to main content
+          </a>
           <Rail />
-          <main className="console__main">
+          <main className="console__main" id="console-main" tabIndex={-1}>
             <div className="console__inner">
               <Outlet />
             </div>

@@ -132,7 +132,15 @@
 
   --text: #17142a;
   --text-muted: #5b5478;
-  --text-dim: #6a6288;
+  /* #6a6288 measured 4.43 against --bg-deep, which is the rail's ground and so
+     the ground under brandmark__sub, rail-group__label and rail-foot__note --
+     three labels present on every console page. Three units darker clears 4.5
+     with headroom (4.63) and stays lighter than --text-muted at 5.51, so the
+     dim/muted hierarchy still reads.
+
+     Earlier passes reported all four zone/theme combinations clean because they
+     measured tokens against --raised only, where this value was always fine. */
+  --text-dim: #675f85;
 
   --accent: #6d4fd6;
   --accent-hover: #5a3dc0;
@@ -141,11 +149,11 @@
   --accent-line: rgba(109, 79, 214, 0.3);
   --accent-text: #5f42c4;
 
-  --info: #1f63c9;
+  --info: #1c60c6;
   --info-soft: rgba(31, 99, 201, 0.09);
   --info-line: rgba(31, 99, 201, 0.3);
 
-  --ok: #0f7a52;
+  --ok: #08734b;
   --ok-soft: rgba(15, 122, 82, 0.1);
   --ok-line: rgba(15, 122, 82, 0.3);
 
@@ -153,10 +161,15 @@
   --warn-soft: rgba(138, 90, 0, 0.1);
   --warn-line: rgba(138, 90, 0, 0.3);
 
-  --bad: #c0353c;
+  --bad: #ba2f36;
   --bad-soft: rgba(192, 53, 60, 0.09);
   --bad-line: rgba(192, 53, 60, 0.3);
 
+  /* Three units of ink each, so the JSON syntax highlighting on Fix clears AA.
+     The code block's ground is --bg-deep (#e5e2ee), darker than the --surface
+     these colours were checked against, and at 9-11px they were landing at
+     4.19-4.46. The `-soft` and `-line` variants are unchanged: they are
+     backgrounds and borders, held to 3:1, and already clear it. */
   --focus: #6d4fd6;
 
   /* Daylight still has to separate open from shuttered at a glance, so the
@@ -1216,14 +1229,37 @@ button.elevation__bay:hover .elevation__glass {
   color: var(--text-muted);
 }
 
-.picker__option:hover {
-  background: var(--raised);
-  color: var(--text);
+.picker__option {
+  cursor: pointer;
 }
 
+/* Two different states that used to look identical.
+
+   `aria-selected` is the store you are working on; `data-active` is the one the
+   arrow keys are currently over. A keyboard user needs to see the second move
+   while the first stays put, so selection keeps the filled ground and the active
+   option gets a ring -- if both were a background fill, arrowing off the current
+   store would look like nothing happened. */
 .picker__option[aria-selected='true'] {
   color: var(--text);
   background: var(--raised);
+}
+
+.picker__option:hover,
+.picker__option[data-active='true'] {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+/* The listbox takes focus itself and drives aria-activedescendant, so the ring
+   belongs on the active option rather than around the whole menu. */
+.picker__menu:focus {
+  outline: none;
+}
+
+.picker__menu:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* ---- Dev drawer (quarantined) -------------------------------------------- */

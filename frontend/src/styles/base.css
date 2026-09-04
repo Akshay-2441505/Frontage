@@ -640,3 +640,40 @@ select.field__control {
 .disclosure > summary:hover {
   color: var(--accent-text);
 }
+
+/* Visually hidden until focused. The one case where hiding a control is right:
+   it exists for the people who can reach it, and showing it to everyone else
+   would be clutter. Positioned fixed rather than absolute so it clears the
+   sticky rail in both zones regardless of where in the tree it sits. */
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  inset-inline-start: 0.5rem;
+  z-index: 100;
+  padding: 0.625rem 0.875rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: var(--radius-s);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  box-shadow: var(--lift-3);
+  /* Off-screen rather than display:none -- a hidden element is not focusable,
+     which would defeat the entire point. */
+  transform: translateY(-160%);
+  transition: transform 140ms ease;
+}
+
+/* :focus, not :focus-visible. A skip link is unreachable by pointer -- it is
+   off-screen until focused -- so every focus it receives is already a keyboard
+   focus. :focus-visible only narrows the cases where it appears, and the failure
+   mode is a link that takes focus while staying invisible. */
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/* The target takes focus programmatically via tabIndex={-1}; it should not then
+   draw a ring around the whole page region. */
+.console__main:focus,
+.otto__main:focus {
+  outline: none;
+}

@@ -38,9 +38,12 @@ export default function OttoLayout() {
   return (
     <ThemeProvider zone="shop" defaultTheme="light">
       <div className="otto zone-enter">
+          <a href="#otto-main" className="skip-link">
+            Skip to main content
+          </a>
           <Rail />
 
-          <div className="otto__main">
+          <div className="otto__main" id="otto-main" tabIndex={-1}>
             <header className="otto__top">
               <span className="otto-mark">
                 <IconSparkle />

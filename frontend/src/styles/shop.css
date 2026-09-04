@@ -640,8 +640,18 @@
   color: var(--text);
 }
 
-.composer__input:focus {
-  outline: none;
+/* :focus-visible, not :focus.
+
+   Killing the ring on :focus removes it for keyboard users too, who are the only
+   people it exists for. The composer's wrapper does draw a focus-within ring, but
+   that ring is --accent-soft, a low-alpha wash well under the 3:1 that a
+   non-text indicator needs -- so it was decoration standing in for an indicator.
+   The input keeps a real outline when reached by keyboard; a pointer click still
+   gets the quiet wrapper treatment. */
+.composer__input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-s);
 }
 
 .composer__input::placeholder {
