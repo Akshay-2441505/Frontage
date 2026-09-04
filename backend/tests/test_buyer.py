@@ -1,6 +1,9 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import groq
+import httpx
+
 import app.agents.buyer as buyer_mod
 from app.models import AgentAction, CatalogItem, CatalogManifest, DiagnosticReport, Merchant
 
@@ -9,6 +12,13 @@ def _fake_completion(payload: dict):
     completion = MagicMock()
     completion.choices = [MagicMock(message=MagicMock(content=json.dumps(payload)))]
     return completion
+
+
+def _fake_groq_status_error(status_code: int):
+    response = httpx.Response(
+        status_code, request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    )
+    return groq.APIStatusError("request rejected", response=response, body=None)
 
 
 def _published_merchant(db_session, merchant, image_url=None, image_urls=None, variant_info=None):
@@ -315,3 +325,91 @@ def test_discover_logs_match_under_the_selected_merchant(db_session, merchant):
 
     action = db_session.get(AgentAction, result["buyer_agent_action_id"])
     assert action.merchant_id == merchant.id
+
+
+def test_discover_falls_back_to_openrouter_when_groq_rejects_the_request_size(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = _fake_groq_status_error(413)
+
+    fallback_payload = json.dumps(
+        {"status": "match", "selected_item_id": item1.id, "reasoning": "Match via fallback."}
+    )
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "call_openrouter", return_value=fallback_payload) as fake_openrouter,
+    ):
+        result = buyer_mod.discover(db_session, "anything")
+
+    assert result["status"] == "purchase_attempted"
+    assert result["selected_product"]["id"] == item1.id
+    fake_openrouter.assert_called_once()
+
+
+def test_discover_falls_back_to_openrouter_on_a_standard_rate_limit_error(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = _fake_groq_status_error(429)
+
+    fallback_payload = json.dumps(
+        {"status": "match", "selected_item_id": item1.id, "reasoning": "Match via fallback."}
+    )
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "call_openrouter", return_value=fallback_payload) as fake_openrouter,
+    ):
+        result = buyer_mod.discover(db_session, "anything")
+
+    assert result["status"] == "purchase_attempted"
+    fake_openrouter.assert_called_once()
+
+
+def test_discover_stays_failed_when_both_groq_and_openrouter_fail(db_session, merchant):
+    _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = _fake_groq_status_error(413)
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "call_openrouter", side_effect=RuntimeError("openrouter also down")),
+    ):
+        result = buyer_mod.discover(db_session, "anything")
+
+    assert result["status"] == "failed"
+
+
+def test_discover_does_not_fall_back_on_a_non_rate_limit_error(db_session, merchant):
+    _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = _fake_groq_status_error(500)
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "call_openrouter") as fake_openrouter,
+    ):
+        result = buyer_mod.discover(db_session, "anything")
+
+    assert result["status"] == "failed"
+    fake_openrouter.assert_not_called()
+
+
+def test_shop_does_not_fall_back_to_openrouter_on_the_same_error_discover_would(db_session, merchant):
+    _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = _fake_groq_status_error(413)
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "call_openrouter") as fake_openrouter,
+    ):
+        result = buyer_mod.shop(db_session, merchant, "anything")
+
+    assert result["status"] == "failed"
+    fake_openrouter.assert_not_called()

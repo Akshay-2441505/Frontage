@@ -11,9 +11,10 @@ say so and surface the candidates.
 """
 import json
 
+import groq
 from sqlalchemy.orm import Session
 
-from app.agents.llm_client import REASONING_MODEL, get_client
+from app.agents.llm_client import REASONING_MODEL, call_openrouter, get_client
 from app.agents.transact import attempt_purchase
 from app.models import AgentAction, AgentResult, CatalogItem, CatalogManifest, DiagnosticReport, Merchant
 
@@ -144,11 +145,17 @@ def _resolve_goal(
     history: list[dict] | None,
     products: list[dict],
     default_merchant_id: str | None = None,
+    allow_fallback: bool = False,
 ) -> dict:
     """Shared by shop() (one merchant) and discover() (every published merchant) --
     this doesn't care where `products` came from, only that every id in it is real
     and that `default_merchant_id` is a sensible thing to log against before a
-    specific merchant is known (None for discover(), the merchant's own id for shop())."""
+    specific merchant is known (None for discover(), the merchant's own id for shop()).
+
+    `allow_fallback` retries via OpenRouter when Groq rejects the request for its size
+    (413) or rate limit (429) -- only discover() sets this, since only its combined
+    cross-merchant prompt is large enough to hit either cap; shop()'s single-merchant
+    prompt never has, so it stays Groq-only and fails closed like every other error."""
     history_text = _format_history(history)
     user_content = f"Shopping goal: {goal}\n\n"
     if history_text:
@@ -156,20 +163,29 @@ def _resolve_goal(
     user_content += (
         f"Catalog manifest:\n{json.dumps(_compact_for_prompt(products), separators=(',', ':'))}"
     )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
 
     try:
-        client = get_client()
-        completion = client.chat.completions.create(
-            model=REASONING_MODEL,
-            max_tokens=600,
-            reasoning_effort="low",  # gpt-oss models spend tokens on hidden reasoning by default
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-        )
-        raw = completion.choices[0].message.content.strip()
+        try:
+            client = get_client()
+            completion = client.chat.completions.create(
+                model=REASONING_MODEL,
+                max_tokens=600,
+                reasoning_effort="low",  # gpt-oss models spend tokens on hidden reasoning by default
+                response_format={"type": "json_object"},
+                messages=messages,
+            )
+            raw = completion.choices[0].message.content.strip()
+        except groq.APIStatusError as exc:
+            if allow_fallback and exc.response.status_code in (413, 429):
+                raw = call_openrouter(
+                    messages, max_tokens=600, response_format={"type": "json_object"}
+                ).strip()
+            else:
+                raise
         parsed = json.loads(raw)
     except Exception as exc:  # noqa: BLE001 - fail closed if the LLM call/parse fails
         action = _log(
@@ -326,4 +342,4 @@ def discover(db: Session, goal: str, history: list[dict] | None = None) -> dict:
         )
         return {"status": "no_merchants", "agent_action_id": action.id}
 
-    return _resolve_goal(db, goal, history, products, default_merchant_id=None)
+    return _resolve_goal(db, goal, history, products, default_merchant_id=None, allow_fallback=True)
