@@ -5,6 +5,7 @@ import BrandMark from '../components/BrandMark'
 import {
   IconArrowRight,
   IconGauge,
+  IconLayout,
   IconPlug,
   IconSearch,
   IconShield,
@@ -46,8 +47,15 @@ function Rail() {
       <MerchantPicker score={report ? report.score : undefined} />
 
       <nav className="rail-group">
-        <span className="rail-group__label">The loop</span>
         <NavLink to="/merchant" end className="rail-link">
+          <IconLayout />
+          Overview
+        </NavLink>
+      </nav>
+
+      <nav className="rail-group">
+        <span className="rail-group__label">The loop</span>
+        <NavLink to="/merchant/diagnose" className="rail-link">
           <span className="rail-link__step">1</span>
           <IconGauge />
           Diagnose

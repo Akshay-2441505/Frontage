@@ -1476,3 +1476,373 @@ button.elevation__bay:hover .elevation__glass {
     padding: 1rem 1rem 0.875rem;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   §13  Overview
+
+   Stat cards, charts and ranked bars. Every number here is measured -- there is
+   no revenue, customer or order data in this product, and a chart of any of
+   them would be a mockup. What there is: fifteen scored measurements, seventy-six
+   timestamped agent actions, and eleven stores to compare.
+   --------------------------------------------------------------------------- */
+
+.statgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  gap: 0.875rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 1.125rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  box-shadow: var(--edge-lit), var(--edge-fall), var(--lift-1);
+}
+
+.stat__label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stat__row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.stat__value {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  line-height: 1;
+  font-weight: 500;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__sub {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.stat__sub--ok { color: var(--ok); }
+.stat__sub--warn { color: var(--warn); }
+.stat__sub--bad { color: var(--bad); }
+
+.stat__sub svg {
+  width: 13px;
+  height: 13px;
+}
+
+.stat__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-block-start: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--accent-text);
+}
+
+.stat__cta svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* The sparkline is the stat's own history, not decoration -- it shares the
+   series the big chart below draws. */
+.spark {
+  flex: none;
+  overflow: visible;
+}
+
+.spark path { stroke: var(--accent); }
+.spark--ok path { stroke: var(--ok); }
+.spark--warn path { stroke: var(--warn); }
+.spark--bad path { stroke: var(--bad); }
+
+/* ---- Panels -------------------------------------------------------------- */
+
+.dash {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0.875rem;
+  align-items: start;
+}
+
+/* The two panels that need the page's full width: a time series compressed into
+   a third of the screen stops being readable, and the activity feed's rows are
+   three columns of text. */
+.dash__wide {
+  grid-column: 1 / -1;
+}
+
+.card__note {
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  margin-block-end: 0.875rem;
+}
+
+/* ---- Charts -------------------------------------------------------------- */
+
+.chart {
+  margin: 0;
+}
+
+.chart__svg {
+  display: block;
+  width: 100%;
+  height: 190px;
+  /* The viewBox is stretched to the panel, so strokes must opt out of scaling
+     or they render thicker vertically than horizontally. */
+  cursor: crosshair;
+}
+
+.chart__line { stroke: var(--accent); }
+.chart__stop-a { stop-color: var(--accent); stop-opacity: 0.22; }
+.chart__stop-b { stop-color: var(--accent); stop-opacity: 0; }
+.chart__cursor { stroke: var(--line-hover); stroke-dasharray: 3 3; }
+.chart__dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+
+.chart__readout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+  min-height: 1.25rem;
+}
+
+.chart__readout-val {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.chart__readout-at,
+.chart__readout-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.chart__none {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* ---- Ranked bars --------------------------------------------------------- */
+
+.ranked {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ranked__row {
+  display: grid;
+  grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.ranked__label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ranked__track {
+  height: 20px;
+  border-radius: 4px;
+  background: var(--bg-deep);
+  box-shadow: var(--sink);
+  overflow: hidden;
+}
+
+/* The bar is the quantity. Colour carries the verdict, so it is set by tone
+   rather than by position in the list. */
+.ranked__fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ranked__row[data-tone='ok'] .ranked__fill { background: var(--ok); }
+.ranked__row[data-tone='warn'] .ranked__fill { background: var(--warn); }
+.ranked__row[data-tone='bad'] .ranked__fill { background: var(--bad); }
+
+.ranked__val {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Donut --------------------------------------------------------------- */
+
+.donut {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin-inline: auto;
+  width: 132px;
+  height: 132px;
+}
+
+.donut svg {
+  position: absolute;
+  inset: 0;
+}
+
+.donut__arc { transition: stroke-dasharray 500ms cubic-bezier(0.22, 1, 0.36, 1); }
+.donut__arc--ok { stroke: var(--ok); }
+.donut__arc--warn { stroke: var(--warn); }
+.donut__arc--bad { stroke: var(--bad); }
+
+.donut__centre {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+
+.donut__total {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  color: var(--text);
+}
+
+.donut__label {
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 1.125rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.legend__key {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.legend__key--ok { background: var(--ok); }
+.legend__key--warn { background: var(--warn); }
+.legend__key--bad { background: var(--bad); }
+
+/* ---- Activity feed ------------------------------------------------------- */
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.feed__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding-block: 0.625rem;
+  border-block-end: 1px solid var(--line);
+}
+
+.feed__row:last-child { border-block-end: none; }
+
+.feed__what {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feed__when {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .ranked__row {
+    grid-template-columns: minmax(0, 6rem) minmax(0, 1fr) auto;
+  }
+
+  .stat__value { font-size: 1.625rem; }
+}
+
+/* The scale sits outside the SVG for the same reason the readout does: the
+   viewBox is stretched to the panel width, which would distort any text in it. */
+.chart {
+  position: relative;
+  padding-inline-start: 3.25rem;
+}
+
+.chart__scale {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__scale span {
+  position: absolute;
+  inset-inline-end: 0.5rem;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.chart__rule {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart__axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-block-start: 0.375rem;
+}

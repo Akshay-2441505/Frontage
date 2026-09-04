@@ -5,6 +5,7 @@ import OttoLayout from './layouts/OttoLayout'
 import ZoneChooser from './pages/ZoneChooser'
 import NotFound from './pages/NotFound'
 import Diagnose from './pages/console/Diagnose'
+import Overview from './pages/console/Overview'
 import Fix from './pages/console/Fix'
 import Trail from './pages/console/Trail'
 import Preview from './pages/console/Preview'
@@ -19,7 +20,8 @@ export default function App() {
         <Route path="/" element={<ZoneChooser />} />
 
         <Route path="/merchant" element={<ConsoleLayout />}>
-          <Route index element={<Diagnose />} />
+          <Route index element={<Overview />} />
+          <Route path="diagnose" element={<Diagnose />} />
           <Route path="fix" element={<Fix />} />
           <Route path="trail" element={<Trail />} />
           <Route path="preview" element={<Preview />} />
