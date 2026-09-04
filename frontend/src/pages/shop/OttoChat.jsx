@@ -4,11 +4,11 @@ import { Link } from 'react-router-dom'
 import { api } from '../../api'
 import { IconArrowRight, IconBag, IconCheck, IconChevron, IconClock, IconMapPin, IconMic, IconSend, IconSparkle } from '../../components/Icons'
 import HeroWall from '../../components/shop/HeroWall'
+import OttoField from '../../components/shop/OttoField'
 import { useMerchants } from '../../context/MerchantContext'
 import { AGENT_NAME } from '../../layouts/OttoLayout'
 import { formatMoney, initialOf } from '../../lib/format'
 import { useImageAspect } from '../../lib/useImageAspects'
-import { spentUnderMandate } from '../../lib/spend'
 import { SPRING, STAGGER, fadeRise, useMotionOK } from '../../lib/motion'
 
 /* Otto's job in the demo is to make one thing legible: an outside agent can now
@@ -269,7 +269,7 @@ function DeliveryAddress({ product, addressAlreadyConfirmed }) {
   )
 }
 
-function Outcome({ purchase, product, merchantName, addressAlreadyConfirmed }) {
+function Outcome({ purchase, product, merchantName, addressAlreadyConfirmed, onAsk, busy }) {
   const liveStatus = usePaymentStatus(purchase)
 
   if (!purchase) {
@@ -361,14 +361,66 @@ function Outcome({ purchase, product, merchantName, addressAlreadyConfirmed }) {
 
   const blocked = purchase.status === 'blocked'
 
+  if (!blocked) {
+    return (
+      <div className="outcome outcome--blocked">
+        <p className="outcome__title">Checkout failed</p>
+        <p className="outcome__body">{purchase.reason}</p>
+        <div className="ledger">
+          <div className="ledger__row">
+            <span>What I tried to buy</span>
+            <span>{formatMoney(product?.price, product?.currency)}</span>
+          </div>
+          <div className="ledger__row ledger__row--total ledger__row--breach">
+            <span>Nothing charged</span>
+            <span>{formatMoney(0, product?.currency)} charged</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const refusal = refusalCopy(purchase, product, merchantName)
+  const d = purchase.block_data || {}
+
   return (
     <div className="outcome outcome--blocked">
-      <p className="outcome__title">
-        {blocked ? 'Stopped before paying' : 'Checkout failed'}
-      </p>
-      <p className="outcome__body">{purchase.reason}</p>
+      <p className="outcome__title">Stopped before paying</p>
+      <p className="outcome__body">{refusal.body}</p>
 
-      {blocked && <BudgetBreach product={product} merchantId={product?.merchant_id} />}
+      {refusal.meter && (
+        <BudgetBreach
+          requested={Number(d.requested) || 0}
+          alreadySpent={Number(d.already_spent) || 0}
+          ceiling={Number(d.spend_ceiling) || 0}
+          remaining={Number(d.remaining) || 0}
+          currency={product?.currency}
+        />
+      )}
+
+      {/* GOV.UK's design system draws the line this screen kept crossing: an
+          error message tells someone their input was wrong, but being refused
+          permission is not that, and the guidance is to explain the problem and
+          give a way forward. The explanation was here; the way forward was not.
+          One button, and only where there is a real next step -- there is nothing
+          Otto can offer when no limit has been set at all. */}
+      {/* Scoped to the store, not just the amount. A bare "under ₹50,000" gave the
+          agent no category to search and it came back asking what kind of product
+          you wanted -- a next step that asks another question is not a next step.
+          The budget is this store's budget, so its catalog is the honest scope. */}
+      {refusal.ask && onAsk && (
+        <p className="outcome__next">
+          <button
+            type="button"
+            className="btn btn--primary btn--sm"
+            onClick={() => onAsk(refusal.ask)}
+            disabled={busy}
+          >
+            {refusal.ask}
+            <IconArrowRight />
+          </button>
+        </p>
+      )}
 
       <div className="ledger">
         <div className="ledger__row">
@@ -376,7 +428,7 @@ function Outcome({ purchase, product, merchantName, addressAlreadyConfirmed }) {
           <span>{formatMoney(product?.price, product?.currency)}</span>
         </div>
         <div className="ledger__row ledger__row--total ledger__row--breach">
-          <span>{blocked ? 'Refused by your spending rules' : 'Nothing charged'}</span>
+          <span>{refusal.byRule ? 'Refused by your spending rules' : 'Nothing charged'}</span>
           <span>{formatMoney(0, product?.currency)} charged</span>
         </div>
       </div>
@@ -384,50 +436,118 @@ function Outcome({ purchase, product, merchantName, addressAlreadyConfirmed }) {
   )
 }
 
-/* The mandate, drawn at the moment it bites.
+/* Otto's own words for a refusal.
+
+   `purchase.reason` is written for the merchant console's audit trail, where
+   "mandate" is exactly the right word. DESIGN_BRIEF §9 forbids that vocabulary in
+   the buyer surface, and this screen rendered it verbatim -- saying "mandate"
+   twice, with an unformatted ₹4999 sitting directly above a correctly formatted
+   ₹4,999.
+
+   It could not be rewritten client-side while every refusal arrived as one opaque
+   string: SIX different rules produce `status: "blocked"`, and only one of them is
+   a budget breach. So the backend now sends `block_code` plus the numbers that
+   rule decided with, and the copy is composed here per code, in Otto's voice.
+
+   An unrecognised code -- an older response, a rule added later -- falls back to a
+   sentence that is true but vague, never to `reason`. Vague in the buyer's voice
+   is a smaller failure than precise in the operator's. */
+const WINDOW_PHRASE = { daily: ' today', weekly: ' this week', monthly: ' this month' }
+
+function refusalCopy(purchase, product, merchantName) {
+  const data = purchase?.block_data || {}
+  const currency = product?.currency
+  const money = (v) => formatMoney(Number(v) || 0, currency)
+  const store = merchantName || 'that store'
+  const item = data.item_name || product?.name || 'it'
+
+  /* Whether the block came from a rule the shopper set, or from the world moving
+     underneath the purchase. The ledger's closing line says which. */
+  const byRule = true
+
+  switch (purchase?.block_code) {
+    case 'spend_ceiling': {
+      const when = WINDOW_PHRASE[data.window] || ''
+      const left = Number(data.remaining) || 0
+      return {
+        byRule,
+        meter: true,
+        body:
+          left > 0
+            ? `That's ${money(data.requested)}, and the spending limit for ${store} has ${money(left)} left${when}. I stopped before paying.`
+            : `That's ${money(data.requested)}, and the spending limit for ${store} is already used up${when}. I stopped before paying.`,
+        ask: left > 0 ? `Show me what's under ${money(left)} at ${store}` : null,
+      }
+    }
+
+    case 'per_transaction_cap': {
+      const cap = Number(data.per_transaction_cap) || 0
+      return {
+        byRule,
+        body: `That's ${money(data.requested)}, above the ${money(cap)} you allow ${store} to charge in one go. I stopped before paying.`,
+        ask: cap > 0 ? `Show me what's under ${money(cap)} at ${store}` : null,
+      }
+    }
+
+    case 'no_mandate':
+      return {
+        byRule,
+        body: `No spending limit is set for ${store} yet, so I won't pay on your behalf there.`,
+      }
+
+    case 'merchant_not_allowed':
+      return {
+        byRule,
+        body: `${store} isn't on your list of approved stores, so I won't pay there.`,
+      }
+
+    case 'price_mismatch':
+      return {
+        byRule: false,
+        body: `The price moved while I was checking out — ${item} is ${money(data.actual)} now, not ${money(data.expected)}. I stopped rather than pay a price you hadn't seen.`,
+      }
+
+    case 'out_of_stock':
+      return {
+        byRule: false,
+        body: `${item} sold out while I was checking out, so there was nothing left to buy.`,
+        ask: `Find me something like ${item} at ${store}`,
+      }
+
+    default:
+      return {
+        byRule,
+        body: "Something about this purchase didn't check out, so I stopped before paying.",
+      }
+  }
+}
+
+/* The spending limit, drawn at the moment it bites.
 
    The refusal is the thing the track brief actually grades ("one failure handled
-   gracefully"), and the reason it confuses people is that the ceiling caps TOTAL
-   spend, not each purchase — so an item comfortably under the limit still gets
-   refused once earlier buys have eaten the budget. Prose says that; a bar
-   crossing a line shows it.
+   gracefully"), and the reason it confuses people is that the limit caps TOTAL
+   spend over a window, not each purchase — so an item comfortably under the limit
+   still gets refused once earlier buys have eaten the budget. Prose says that; a
+   bar crossing a line shows it.
 
    The track spans everything this purchase would have totalled, with the limit
-   marked partway along, so the request visibly runs past it. Renders nothing at
-   all if the mandate or audit log can't be read — the prose reason above already
-   carries the numbers, so there is no need to apologise for its absence. */
-function BudgetBreach({ product, merchantId }) {
+   marked partway along, so the request visibly runs past it.
+
+   This used to fetch the mandate and the audit log and re-derive the spend itself,
+   which was wrong twice over: it ignored the mandate's rolling window, so a daily
+   budget showed weeks of purchases against it, and it drew a meter under all six
+   kinds of block, including "out of stock". It now renders only for a real breach,
+   from the numbers the backend refused with. */
+function BudgetBreach({ requested, alreadySpent, ceiling, remaining, currency }) {
   const motionOK = useMotionOK()
-  const [budget, setBudget] = useState(null)
 
-  useEffect(() => {
-    if (!merchantId) return undefined
-    let cancelled = false
+  const total = alreadySpent + requested
+  if (!(ceiling > 0) || requested <= 0 || total <= 0) return null
 
-    Promise.all([
-      api.getMandate(merchantId).catch(() => null),
-      api.getAuditLog(merchantId).catch(() => []),
-    ]).then(([mandate, log]) => {
-      if (cancelled || !mandate?.spend_ceiling) return
-      setBudget({ ceiling: Number(mandate.spend_ceiling), spent: spentUnderMandate(log, mandate) })
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [merchantId])
-
-  const requested = Number(product?.price) || 0
-  if (!budget || requested <= 0) return null
-
-  const total = budget.spent + requested
-  if (total <= 0) return null
-
-  const currency = product?.currency
-  const spentPct = (budget.spent / total) * 100
+  const spentPct = (alreadySpent / total) * 100
   const requestedPct = (requested / total) * 100
-  const ceilingPct = Math.min((budget.ceiling / total) * 100, 100)
-  const over = Math.max(total - budget.ceiling, 0)
+  const ceilingPct = Math.min((ceiling / total) * 100, 100)
+  const over = Math.max(total - ceiling, 0)
 
   return (
     <div className="breach">
@@ -447,29 +567,57 @@ function BudgetBreach({ product, merchantId }) {
           <div className="breach__limit" style={{ left: `${ceilingPct}%` }} />
         </div>
         <span className="breach__limit-label" style={{ left: `${ceilingPct}%` }}>
-          limit {formatMoney(budget.ceiling, currency)}
+          limit {formatMoney(ceiling, currency)}
         </span>
       </div>
 
       <div className="breach__legend">
         <span>
           <i className="breach__key breach__key--spent" />
-          {formatMoney(budget.spent, currency)} already spent
+          {formatMoney(alreadySpent, currency)} already spent
         </span>
         <span>
           <i className="breach__key breach__key--requested" />
           {formatMoney(requested, currency)} this request
         </span>
+        {/* The headroom is the only number here anyone can act on, and it was the
+            one number the card left out. */}
+        <span className="breach__left">{formatMoney(remaining, currency)} left</span>
         <span className="breach__over">{formatMoney(over, currency)} over</span>
       </div>
     </div>
   )
 }
 
-function Turn({ turn, index, onPick, onConfirmPurchase, busy }) {
+function Turn({ turn, index, onPick, onConfirmPurchase, onAsk, busy }) {
   const turnMotionOK = useMotionOK()
 
   const { goal, result } = turn
+
+  /* The three beats of a settled turn, named so the order can change with the
+     outcome without duplicating any of them. */
+  const productNode = (
+    <motion.div className="prod-rail" variants={fadeRise}>
+      <ProductCard product={result?.selected_product} chosen />
+    </motion.div>
+  )
+  const attributionNode = (
+    <motion.div variants={fadeRise}>
+      <Attribution merchantName={result?.selected_product?.merchant_name} />
+    </motion.div>
+  )
+  const outcomeNode = (
+    <motion.div variants={fadeRise}>
+      <Outcome
+        purchase={result?.purchase_result}
+        product={result?.selected_product}
+        merchantName={result?.selected_product?.merchant_name}
+        addressAlreadyConfirmed={result?.addressAlreadyConfirmed}
+        onAsk={onAsk}
+        busy={busy}
+      />
+    </motion.div>
+  )
 
   return (
     <>
@@ -555,20 +703,23 @@ function Turn({ turn, index, onPick, onConfirmPurchase, busy }) {
                 {result.buyer_reasoning ||
                   `Here's what I found at ${result.selected_product?.merchant_name || 'that store'}.`}
               </motion.p>
-              <motion.div className="prod-rail" variants={fadeRise}>
-                <ProductCard product={result.selected_product} chosen />
-              </motion.div>
-              <motion.div variants={fadeRise}>
-                <Attribution merchantName={result.selected_product?.merchant_name} />
-              </motion.div>
-              <motion.div variants={fadeRise}>
-                <Outcome
-                  purchase={result.purchase_result}
-                  product={result.selected_product}
-                  merchantName={result.selected_product?.merchant_name}
-                  addressAlreadyConfirmed={result.addressAlreadyConfirmed}
-                />
-              </motion.div>
+              {/* A bought turn ends on the order; a refused one ends on the way
+                  forward. The refusal used to sit last, under a 293px photograph
+                  of the thing you had just been denied — the most prominent
+                  element on the screen, and the last thing you were left with. */}
+              {result.purchase_result?.status === 'success' ? (
+                <>
+                  {productNode}
+                  {attributionNode}
+                  {outcomeNode}
+                </>
+              ) : (
+                <>
+                  {outcomeNode}
+                  {productNode}
+                  {attributionNode}
+                </>
+              )}
             </motion.div>
           )}
         </div>
@@ -849,9 +1000,22 @@ function useCrossMerchantSample(merchants) {
     let cancelled = false
     const picked = merchants.slice(0, HERO_SAMPLE_MERCHANT_LIMIT)
 
+    /* The per-merchant catalog endpoint returns items, not their store's name --
+       it is scoped to one merchant, so it has never needed to repeat it. The wall
+       does need it, now that each card carries a store pin, and the hook already
+       knows which merchant it asked. Stamping it on here beats widening the
+       endpoint's response for one cosmetic consumer. */
     Promise.all(picked.map((m) => api.getCatalog(m.id).catch(() => [])))
       .then((lists) => {
-        if (!cancelled) setSample(lists.flat())
+        if (cancelled) return
+        setSample(
+          lists.flatMap((items, i) =>
+            items.map((item) => ({
+              ...item,
+              merchant_name: item.merchant_name || picked[i].name,
+            })),
+          ),
+        )
       })
 
     return () => {
@@ -862,9 +1026,34 @@ function useCrossMerchantSample(merchants) {
   return sample
 }
 
+/* The reach line under the greeting. Otto's whole claim is breadth -- one agent
+   across every store that publishes a readable catalog -- and the hero asserted
+   it in prose ("every agent-ready store") without ever saying how many. A number
+   is the difference between a claim and a demonstration. Fetched rather than
+   derived from the merchant list, because a store that has connected but not
+   published is not reachable and must not be counted. */
+function useReach() {
+  const [reach, setReach] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.getReach()
+      .then((r) => {
+        if (!cancelled && r?.products) setReach(r)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return reach
+}
+
 export default function OttoChat() {
   const { merchants } = useMerchants()
   const catalog = useCrossMerchantSample(merchants)
+  const reach = useReach()
   const [goal, setGoal] = useState('')
   const [turns, setTurns] = useState([])
   const [busy, setBusy] = useState(false)
@@ -1046,6 +1235,18 @@ export default function OttoChat() {
             fits, and check out — as long as it's inside the limit each store set.
           </motion.p>
 
+          {/* Rendered only once the number is real. A skeleton "— stores" would be
+              a worse claim than none. */}
+          {reach && (
+            <motion.p className="otto-hero__reach" variants={fadeRise}>
+              <span className="otto-hero__reach-n">{reach.products}</span> products
+              <span className="otto-hero__reach-dot" aria-hidden="true" />
+              <span className="otto-hero__reach-n">{reach.stores}</span> stores
+              <span className="otto-hero__reach-dot" aria-hidden="true" />
+              readable right now
+            </motion.p>
+          )}
+
           <motion.div variants={fadeRise} style={{ width: '100%' }}>
             {composer}
           </motion.div>
@@ -1062,9 +1263,15 @@ export default function OttoChat() {
     )
   }
 
+  /* The field follows the most recent turn that actually reported a funnel, not
+     the last turn outright: while a follow-up is in flight the previous answer
+     stays on screen rather than the whole right-hand side blanking. */
+  const fieldResult = [...turns].reverse().find((t) => t.result?.considered_count)?.result || null
+
   return (
     <>
       <div className="otto__body">
+        <div className="otto__work">
         <div className="convo" ref={convoRef}>
           <div className="convo__inner" ref={innerRef}>
             <AnimatePresence initial={false}>
@@ -1083,6 +1290,7 @@ export default function OttoChat() {
                     turn={turn}
                     onPick={pick}
                     onConfirmPurchase={confirmPurchase}
+                    onAsk={send}
                     busy={busy}
                   />
                 </motion.div>
@@ -1097,6 +1305,9 @@ export default function OttoChat() {
               </div>
             )}
           </div>
+        </div>
+
+        <OttoField result={fieldResult} onPick={askAbout} busy={busy} />
         </div>
       </div>
 

@@ -65,6 +65,26 @@
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
+
+  /* Otto's light is the same light, warmer. The shop zone is a retail surface
+     rather than a drawing, so its planes sit a touch further off the ground --
+     but the restraint is the same: felt, not seen. Inked with the zone's own
+     near-black (#0f1420) so shadows stay in family with the type. */
+  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --edge-fall: inset 0 -1px 0 rgba(15, 20, 32, 0.04);
+
+  --lift-1: 0 1px 2px rgba(15, 20, 32, 0.045), 0 2px 8px rgba(15, 20, 32, 0.05);
+  --lift-2: 0 2px 5px rgba(15, 20, 32, 0.06), 0 10px 24px rgba(15, 20, 32, 0.085);
+  --lift-3: 0 6px 14px rgba(15, 20, 32, 0.09), 0 22px 48px rgba(15, 20, 32, 0.14);
+
+  --sink: inset 0 1px 3px rgba(15, 20, 32, 0.06);
+
+  /* Otto's page is already #fdfdfb -- two units off white -- so a lit stop has
+     nowhere to go and the shade does all the work here. Light from above,
+     established by what falls away below it rather than by a highlight. */
+  --pool-lit: rgba(255, 255, 255, 0.4);
+  --pool-shade: rgba(15, 20, 32, 0.05);
+
 }
 
 .zone-shop[data-theme='dark'] {
@@ -107,6 +127,19 @@
   --bad-line: rgba(255, 100, 89, 0.36);
 
   --focus: #ff6b5e;
+
+  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --edge-fall: inset 0 -1px 0 rgba(0, 0, 0, 0.42);
+
+  --lift-1: 0 1px 2px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.24);
+  --lift-2: 0 2px 5px rgba(0, 0, 0, 0.38), 0 10px 24px rgba(0, 0, 0, 0.32);
+  --lift-3: 0 6px 12px rgba(0, 0, 0, 0.44), 0 22px 48px rgba(0, 0, 0, 0.5);
+
+  --sink: inset 0 1px 3px rgba(0, 0, 0, 0.38);
+
+  --pool-lit: rgba(255, 255, 255, 0.018);
+  --pool-shade: rgba(0, 0, 0, 0.36);
+
 }
 
 /* ---- Shell --------------------------------------------------------------- */
@@ -114,11 +147,18 @@
 /* Otto is a fixed-height app frame: the rail and composer stay put and only the
    conversation scrolls. A min-height shell instead lets the document scroll,
    which drags the composer off screen mid-demo. */
+/* Otto's ground gets the same treatment, warmer and a touch stronger: a retail
+   surface can carry more light than a drawing office. */
 .otto {
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr);
   height: 100dvh;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(115% 68% at 50% -14%, var(--pool-lit), transparent 60%),
+    radial-gradient(130% 85% at 50% 116%, var(--pool-shade), transparent 56%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 .otto__rail {
@@ -394,6 +434,35 @@
   color: var(--text-muted);
 }
 
+/* The claim above says "every agent-ready store". This says how many that is.
+   Set quieter than the greeting but with the figures in mono at full strength,
+   so the eye lands on the two numbers and reads the words as their caption. */
+.otto-hero__reach {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.otto-hero__reach-n {
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  letter-spacing: 0;
+  color: var(--text);
+  margin-inline-end: -0.2rem;
+}
+
+.otto-hero__reach-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--line-hover);
+  flex: none;
+}
+
 /* ---- Product wall -------------------------------------------------------- */
 
 /* The depth here is a real 3D space, not a drop-shadow trick: the stage gets a
@@ -459,7 +528,7 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: 0 14px 34px rgba(15, 20, 32, 0.13);
+  box-shadow: var(--edge-lit), var(--lift-3);
   text-align: start;
   cursor: pointer;
 }
@@ -524,6 +593,19 @@
   color: var(--text-muted);
 }
 
+/* Set below the price and dimmer than it: the store is context for the product,
+   not a competing line. Truncates rather than wraps -- a card is ~160px and a
+   two-line store name would push the price out of alignment across the wall. */
+.wall__store {
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 /* ---- Composer ------------------------------------------------------------ */
 
 .composer {
@@ -537,7 +619,7 @@
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: 999px;
-  box-shadow: 0 6px 22px rgba(15, 20, 32, 0.06);
+  box-shadow: var(--edge-lit), var(--lift-2);
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease;
@@ -545,7 +627,7 @@
 
 .composer:focus-within {
   border-color: var(--accent-line);
-  box-shadow: 0 6px 26px rgba(229, 67, 58, 0.14);
+  box-shadow: var(--edge-lit), var(--lift-2), 0 0 0 4px var(--accent-soft);
 }
 
 .composer__input {
@@ -804,7 +886,7 @@
 .prod:focus-visible {
   border-color: var(--accent-line);
   transform: translateY(-2px);
-  box-shadow: 0 10px 26px rgba(15, 20, 32, 0.08);
+  box-shadow: var(--edge-lit), var(--lift-2);
 }
 
 .prod--chosen {
@@ -1085,6 +1167,7 @@
   border-radius: 999px;
   background: var(--raised);
   border: 1px solid var(--line-strong);
+  box-shadow: var(--sink);
   overflow: hidden;
 }
 
@@ -1151,11 +1234,27 @@
   background: var(--bad);
 }
 
-.breach__over {
+/* The two derived numbers close the legend as a pair, pushed away from the two
+   keyed ones. Only the first `auto` earns the free space -- putting one on both
+   split it between them and drifted the pair apart. */
+.breach__left {
   margin-inline-start: auto;
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.breach__over {
   font-family: var(--font-mono);
   color: var(--bad);
   font-weight: 500;
+}
+
+/* The way forward out of a refusal. GOV.UK's guidance on this is that being
+   refused permission is not a validation error, and the page owes you what to do
+   next -- so this is a primary action, not a quiet link. */
+.outcome__next {
+  margin-block-start: 1rem;
 }
 
 .ledger {
@@ -1373,4 +1472,261 @@
 .addr-confirm__address {
   font-size: 0.875rem;
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+   §12  The field
+
+   Once a question has been asked, the conversation stops being the page and
+   becomes a rail beside it. What takes the room is the narrowing: the funnel,
+   and the shortlist it produced.
+   --------------------------------------------------------------------------- */
+
+.otto__work {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 1500px;
+  margin-inline: auto;
+  display: grid;
+  /* The rail keeps enough width for a product card (210-232px) plus the ledger
+     rows and the outcome card, which are the widest things a turn renders. */
+  grid-template-columns: minmax(380px, 32%) minmax(0, 1fr);
+  gap: 1.75rem;
+  padding-block: 1.5rem 0.5rem;
+}
+
+/* The rail scrolls on its own so a long conversation never pushes the field
+   off the bottom of the page. */
+.otto__work > .convo {
+  max-width: none;
+  margin-inline: 0;
+  padding-block: 0;
+}
+
+.otto-field {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+  overflow-y: auto;
+  padding-block-end: 1rem;
+}
+
+.otto-field__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* The grid scrolls under this, so it needs its own ground rather than the
+     page's -- a transparent sticky header lets tiles read through it. */
+  background: linear-gradient(var(--bg-deep) 72%, transparent);
+  padding-block: 0.25rem 0.875rem;
+}
+
+.funnel {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.875rem;
+}
+
+.funnel__step {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.funnel__num {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.funnel__label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.funnel__step--muted .funnel__num {
+  color: var(--text-muted);
+}
+
+/* Drawn rather than typed: an arrow glyph sits on the text baseline and floats
+   above numbers this size, and "->" reads as code. */
+.funnel__arrow {
+  align-self: center;
+  width: 1.5rem;
+  height: 1px;
+  background: var(--line-strong);
+  position: relative;
+  flex: none;
+}
+
+.funnel__arrow::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 0;
+  top: -2px;
+  width: 5px;
+  height: 5px;
+  border-top: 1px solid var(--line-strong);
+  border-inline-end: 1px solid var(--line-strong);
+  transform: rotate(45deg);
+}
+
+.otto-field__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(154px, 1fr));
+  gap: 0.875rem;
+}
+
+.otto-field__none {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  max-width: 34rem;
+}
+
+.fieldtile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--raised);
+  text-align: start;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: var(--edge-lit), var(--lift-1);
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.fieldtile:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  transform: translateY(-2px);
+  box-shadow: var(--edge-lit), var(--lift-2);
+}
+
+.fieldtile:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.fieldtile__frame {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  background: var(--bg-deep);
+  overflow: hidden;
+  box-shadow: var(--edge-fall);
+}
+
+.fieldtile__frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.fieldtile__nophoto {
+  padding: 0.75rem;
+  height: 100%;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--text-dim);
+  /* Long imported product names run to several lines; clamp rather than let one
+     tile grow taller than its neighbours and break the grid's rhythm. */
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fieldtile__mark {
+  position: absolute;
+  inset-inline: 0.375rem;
+  bottom: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.fieldtile--chosen {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.fieldtile__name {
+  padding-inline: 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fieldtile__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0 0.625rem 0.625rem;
+}
+
+.fieldtile__price {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.fieldtile__store {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Below the two-column threshold the field stacks above the conversation rather
+   than disappearing -- it is the part that explains what the agent did, so it is
+   the last thing that should be dropped for width. */
+@media (max-width: 1179px) {
+  .otto__work {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 34vh) minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+
+  .otto-field {
+    order: -1;
+  }
+}
+
+/* True mobile cannot hold both. The conversation carries the answer, so the
+   field is the one that goes. */
+@media (max-width: 767px) {
+  .otto__work {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .otto-field {
+    display: none;
+  }
 }

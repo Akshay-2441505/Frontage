@@ -1,10 +1,8 @@
-import { motion } from 'motion/react'
 import { Link, Outlet } from 'react-router-dom'
 import { IconBag, IconHistory, IconSearch, IconSparkle, IconStore } from '../components/Icons'
 import ThemeToggle from '../components/ThemeToggle'
 import { useMerchants } from '../context/MerchantContext'
 import { ThemeProvider } from '../context/ThemeContext'
-import { EASE, useMotionOK } from '../lib/motion'
 
 /* Otto is the third-party shopping agent standing in for ChatGPT or Gemini
    (PROJECT_SPEC §4, §8). It is deliberately not Frontage: different ground,
@@ -36,16 +34,10 @@ function Rail() {
 
 export default function OttoLayout() {
   const { error } = useMerchants()
-  const motionOK = useMotionOK()
 
   return (
     <ThemeProvider zone="shop" defaultTheme="light">
-      <motion.div
-        className="otto"
-        initial={motionOK ? { opacity: 0 } : false}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.34, ease: EASE.out }}
-      >
+      <div className="otto zone-enter">
           <Rail />
 
           <div className="otto__main">
@@ -75,7 +67,7 @@ export default function OttoLayout() {
 
           <Outlet />
         </div>
-      </motion.div>
+      </div>
     </ThemeProvider>
   )
 }

@@ -80,6 +80,40 @@
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
+
+  /* ---- Material -----------------------------------------------------------
+     One light, fixed above the page and a little to the left, so every raised
+     thing catches on its top edge and casts down and slightly right. Depth here
+     is deliberately shallow: the console's identity is a crisp 1px line, and a
+     drawing office does not have drop shadows. These separate planes; they are
+     not meant to be looked at.
+
+     In a dark room a black shadow barely reads, so the separation is carried
+     mostly by the lit edge and only supported by the cast. In daylight it is
+     the other way round -- see the light block below. */
+  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --edge-fall: inset 0 -1px 0 rgba(0, 0, 0, 0.36);
+
+  --lift-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.2);
+  --lift-2: 0 2px 5px rgba(0, 0, 0, 0.34), 0 10px 24px rgba(0, 0, 0, 0.28);
+  --lift-3: 0 6px 12px rgba(0, 0, 0, 0.4), 0 22px 48px rgba(0, 0, 0, 0.44);
+
+  /* The inverse, for things set INTO the surface rather than onto it: inputs,
+     code blocks, meter tracks. A recess is the same light read backwards. */
+  --sink: inset 0 1px 3px rgba(0, 0, 0, 0.34);
+
+  /* The ground is no longer one flat fill. Two stops, not one: a lit pool
+     overhead and a shade gathering at the bottom, so the page has a direction
+     and not merely a bright patch. The alphas are set so the ground shifts by a
+     few units across the whole viewport -- enough to feel lit, never enough to
+     read as a gradient. */
+  /* 0.02, arrived at by composite rather than by eye: --bg is #12101c and
+     --surface is #1a1727, eight units apart. At 0.04 the lit ground reached
+     surface value and a raised panel dissolved into the page at the top of the
+     viewport -- the exact failure the lit edge exists to prevent. */
+  --pool-lit: rgba(255, 255, 255, 0.02);
+  --pool-shade: rgba(0, 0, 0, 0.32);
+
 }
 
 /* Daylight. Same street at midday — the frontage is still measurable, the lit
@@ -135,14 +169,49 @@
   --shutter-slat: rgba(0, 0, 0, 0.13);
   --pier: #b3adc6;
   --pavement: #cdc8dc;
+
+  /* Daylight inverts which cue does the work: the cast shadow separates planes
+     and the lit edge is a near-white hairline that keeps a pale card from
+     dissolving into a pale page. Tinted with the zone's own ink rather than
+     neutral black -- a grey shadow on a violet-grey ground reads as dirt. */
+  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --edge-fall: inset 0 -1px 0 rgba(23, 20, 42, 0.045);
+
+  --lift-1: 0 1px 2px rgba(23, 20, 42, 0.05), 0 2px 6px rgba(23, 20, 42, 0.045);
+  --lift-2: 0 2px 4px rgba(23, 20, 42, 0.06), 0 8px 20px rgba(23, 20, 42, 0.075);
+  --lift-3: 0 6px 12px rgba(23, 20, 42, 0.08), 0 20px 44px rgba(23, 20, 42, 0.13);
+
+  --sink: inset 0 1px 3px rgba(23, 20, 42, 0.07);
+
+  /* 0.55, not more: --bg is #f2f0f7 and --surface is #ffffff, only 13 units
+     apart. A stronger pool lifts the ground to white at the top of the viewport
+     and a white card stops being a card. */
+  --pool-lit: rgba(255, 255, 255, 0.55);
+  --pool-shade: rgba(23, 20, 42, 0.045);
+
 }
 
 /* ---- Shell --------------------------------------------------------------- */
 
+/* The ground the whole console sits on. One flat fill is a colour, not a room:
+   this puts the light overhead and slightly left, and lets it fall away toward
+   the corners, so the shadows below have something to be consistent with. The
+   pool is a single very low-alpha stop -- at these values it is invisible as a
+   gradient and only readable as "this page has a top". */
 .console {
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr);
   min-height: 100dvh;
+  /* Painted into the background layer rather than an overlaid pseudo-element:
+     an overlay, however transparent, is one stacking-context mistake away from
+     sitting on top of the page's own text. A background cannot do that.
+     `fixed` keeps the light overhead while the page scrolls under it, instead
+     of the pool scrolling away with the content. */
+  background-image:
+    radial-gradient(120% 72% at 42% -12%, var(--pool-lit), transparent 62%),
+    radial-gradient(140% 90% at 50% 118%, var(--pool-shade), transparent 58%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 .console__rail {
@@ -152,6 +221,10 @@
   padding: 1.25rem 1rem;
   background: var(--bg-deep);
   border-inline-end: 1px solid var(--line);
+  /* The rail is the only plane that is set BACK from the page rather than
+     raised onto it -- it holds still while main scrolls past. So it takes the
+     recess, and main reads as the nearer surface without either one moving. */
+  box-shadow: var(--sink);
   position: sticky;
   top: 0;
   height: 100dvh;
@@ -690,6 +763,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
   min-width: 0;
+  box-shadow: var(--edge-lit), var(--edge-fall);
 }
 
 .cat-item__head {
@@ -771,6 +845,7 @@
   border-radius: 999px;
   background: var(--input-bg);
   border: 1px solid var(--line-strong);
+  box-shadow: var(--sink);
   overflow: hidden;
 }
 
@@ -961,6 +1036,9 @@
   background: var(--bg-deep);
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
+  /* A manifest is something the page contains, not something it presents --
+     recessed, like the inputs. */
+  box-shadow: var(--sink);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   line-height: 1.65;
@@ -1007,6 +1085,7 @@
   background: var(--raised);
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
+  box-shadow: var(--edge-lit), var(--edge-fall);
 }
 
 .step[data-state='active'] {
@@ -1060,6 +1139,9 @@
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-s);
+  /* A control sits on the rail rather than in it, and it is the one thing in
+     the rail you are meant to reach for. */
+  box-shadow: var(--edge-lit), var(--lift-1);
   text-align: start;
   min-width: 0;
 }
@@ -1097,7 +1179,10 @@
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+  /* Was a hardcoded black cast, which meant the light theme got a night-time
+     shadow under a daylight menu. This is the only floating plane in the
+     console, so it takes the deepest lift. */
+  box-shadow: var(--lift-3);
 }
 
 .picker__option {

@@ -20,6 +20,11 @@ export const api = {
   listMerchants: () => request('/merchants'),
   getMerchant: (id) => request(`/merchants/${id}`),
   getCatalog: (id) => request(`/merchants/${id}/catalog`),
+
+  /* How many products, across how many stores, Otto can actually read right now.
+     Counted server-side from the same set discover() searches, so the hero's
+     claim and the funnel's first number cannot drift apart. */
+  getReach: () => request('/buyer-agent/reach'),
   runDiagnose: (id) => request(`/merchants/${id}/diagnose`, { method: 'POST' }),
   getLatestDiagnosis: (id) => request(`/merchants/${id}/diagnose/latest`),
   getDiagnosisHistory: (id) => request(`/merchants/${id}/diagnose/history`),

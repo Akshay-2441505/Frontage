@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { motion } from 'motion/react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { api } from '../api'
 import BrandMark from '../components/BrandMark'
@@ -16,7 +15,6 @@ import MerchantPicker from '../components/MerchantPicker'
 import ThemeToggle from '../components/ThemeToggle'
 import { useMerchants } from '../context/MerchantContext'
 import { ThemeProvider } from '../context/ThemeContext'
-import { EASE, useMotionOK } from '../lib/motion'
 
 /* The console owns the latest diagnostic report for the selected merchant.
    Three places need it — the rail shows the score beside the store name,
@@ -107,7 +105,6 @@ function Rail() {
 
 export default function ConsoleLayout() {
   const { merchantId } = useMerchants()
-  const motionOK = useMotionOK()
   const [report, setReport] = useState(null)
   const [history, setHistory] = useState([])
   const [running, setRunning] = useState(false)
@@ -157,19 +154,14 @@ export default function ConsoleLayout() {
   return (
     <ThemeProvider zone="console" defaultTheme="dark">
       <ConsoleContext.Provider value={value}>
-        <motion.div
-          className="console"
-          initial={motionOK ? { opacity: 0 } : false}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.34, ease: EASE.out }}
-        >
+        <div className="console zone-enter">
           <Rail />
           <main className="console__main">
             <div className="console__inner">
               <Outlet />
             </div>
           </main>
-        </motion.div>
+        </div>
       </ConsoleContext.Provider>
     </ThemeProvider>
   )
