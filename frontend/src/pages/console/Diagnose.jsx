@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../../api'
 import CatalogThumb from '../../components/CatalogThumb'
+import { AreaChart, RankedBars } from '../../components/Charts'
 import FrontageElevation, { baysFromReport } from '../../components/FrontageElevation'
-import { IconArrowRight, IconArrowUp, IconCheck, IconGauge, IconX } from '../../components/Icons'
+import { IconArrowRight, IconArrowUp, IconCheck, IconGauge, IconStore, IconX } from '../../components/Icons'
 import { useMerchants } from '../../context/MerchantContext'
 import { useConsole } from '../../layouts/ConsoleLayout'
-import { countWord, formatMoney } from '../../lib/format'
+import { countWord, formatMoney, formatScore } from '../../lib/format'
 
 function variantSummary(variantInfo) {
   if (!variantInfo || typeof variantInfo !== 'object') return null
@@ -14,6 +15,53 @@ function variantSummary(variantInfo) {
     .filter(([, v]) => v !== null && v !== undefined && String(v).length > 0)
     .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
   return parts.length ? parts.join(' · ') : null
+}
+
+/* Scores for every merchant, for the comparison panel. Fetched here rather than
+   widened into /merchants, because it is one panel's view and that endpoint is
+   used by both zones. A store whose report will not load is dropped rather than
+   shown as zero -- it has not scored nothing, it is unknown. */
+function useAllScores(merchants, currentId) {
+  const [rows, setRows] = useState([])
+
+  useEffect(() => {
+    if (!merchants || merchants.length === 0) {
+      setRows([])
+      return undefined
+    }
+    let cancelled = false
+
+    Promise.all(
+      merchants.map((m) =>
+        api
+          .getLatestDiagnosis(m.id)
+          .then((r) =>
+            r
+              ? {
+                  key: m.id,
+                  label: m.name,
+                  value: Math.round(r.score),
+                  /* Widened from the Overview's >= 85. That band painted 99 and
+                     98 as warnings, so six of eleven stores read amber and the
+                     panel looked like an alarm when ten of eleven were fine. */
+                  tone: m.id === currentId ? 'accent' : r.score >= 95 ? 'ok' : r.score >= 80 ? 'warn' : 'bad',
+                  current: m.id === currentId,
+                }
+              : null,
+          )
+          .catch(() => null),
+      ),
+    ).then((all) => {
+      if (cancelled) return
+      setRows(all.filter(Boolean).sort((a, b) => b.value - a.value))
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [merchants, currentId])
+
+  return rows
 }
 
 function CatalogItem({ item }) {
@@ -68,7 +116,7 @@ function CatalogItem({ item }) {
 }
 
 export default function Diagnose() {
-  const { merchantId, merchant } = useMerchants()
+  const { merchantId, merchant, merchants } = useMerchants()
   const { report, history, running, error, runDiagnose } = useConsole()
   const [catalog, setCatalog] = useState([])
   const [catalogError, setCatalogError] = useState(null)
@@ -93,6 +141,8 @@ export default function Diagnose() {
       })
       .finally(() => setLoadingCatalog(false))
   }, [merchantId])
+
+  const allScores = useAllScores(merchants, merchantId)
 
   const bays = baysFromReport(report)
 
@@ -212,6 +262,49 @@ export default function Diagnose() {
           </span>
         )}
       </div>
+
+      {/* The drawing, then its history, then where it stands.
+
+         These two panels came from a separate Overview page that has been
+         deleted. It scored 19/40 and three of its five panels restated pages
+         that already existed; these are the two that did not. They belong here
+         rather than on a landing page of their own -- this chart is the history
+         of the exact number the Elevation above it draws, and the badge beside
+         "Measure again" is its one-line summary. */}
+      {report && history.length > 1 && (
+        <div className="pair">
+          <section className="card">
+            <div className="card__head">
+              <h2 className="card__title">Score over time</h2>
+              <span className="eyebrow">{history.length} measurements</span>
+            </div>
+            <AreaChart
+              values={history.map((h) => h.score)}
+              labels={history.map((h, i) => (i === 0 ? 'first measurement' : `run ${i + 1}`))}
+              format={(v) => `${formatScore(v)} / 100`}
+              caption={`${formatScore(history[0].score)} to ${formatScore(history[history.length - 1].score)}`}
+            />
+          </section>
+
+          <section className="card">
+            <div className="card__head">
+              <h2 className="card__title">Across your stores</h2>
+              <Link to="/merchant/connect" className="btn btn--quiet btn--sm">
+                <IconStore />
+                Connect
+              </Link>
+            </div>
+            {/* max=100, not the list maximum: these are scores out of 100, and
+                the empty track is the frontage each store has still to earn --
+                the same reading as the Elevation's unlit bays. */}
+            <RankedBars
+              rows={allScores}
+              max={100}
+              emptyLabel="No other stores measured yet"
+            />
+          </section>
+        </div>
+      )}
 
       {error && (
         <div className="notice notice--bad">

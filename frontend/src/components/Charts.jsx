@@ -4,15 +4,14 @@ import { useId, useMemo, useState } from 'react'
 
    No chart library. The rest of this frontend is hand-rolled against a token
    system with two zones that assign the same names to opposed values, and every
-   charting library wants to own its own colours, fonts and theming. Four shapes
+   charting library wants to own its own colours, fonts and theming. Three shapes
    is less code than the adapter layer would be, and these inherit the zone's
    tokens for free because they are just elements.
 
    Every one of them draws real data or renders nothing. There is no placeholder
    series anywhere in this file. */
 
-/* Turns a series into a path. Shared by the sparkline and the area chart so a
-   number and its enlargement can never trace different curves. */
+/* Turns a series into a path. */
 function pathFor(values, w, h, pad = 2) {
   if (values.length === 0) return { line: '', area: '', points: [] }
   const min = Math.min(...values)
@@ -32,25 +31,6 @@ function pathFor(values, w, h, pad = 2) {
   const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
   const area = `${line} L${w},${h} L0,${h} Z`
   return { line, area, points }
-}
-
-/* A number's own history, sized to sit beside it. */
-export function Sparkline({ values, width = 96, height = 30, tone = 'accent' }) {
-  const { line } = useMemo(() => pathFor(values, width, height, 3), [values, width, height])
-  if (values.length < 2) return null
-
-  return (
-    <svg
-      className={`spark spark--${tone}`}
-      viewBox={`0 0 ${width} ${height}`}
-      width={width}
-      height={height}
-      aria-hidden="true"
-      preserveAspectRatio="none"
-    >
-      <path d={line} fill="none" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
-  )
 }
 
 /* The same series, given room, with a readout that follows the pointer. */
@@ -84,15 +64,22 @@ export function AreaChart({ values, labels = [], height = 190, format = (v) => v
 
   return (
     <figure className="chart">
-      <div className="chart__scale" aria-hidden="true">
-        {rules.map((r) => (
-          <span key={r.y} style={{ top: `${(r.y / height) * 100}%` }}>
-            {format(r.value)}
-          </span>
-        ))}
-      </div>
+      {/* The scale lives INSIDE a box that is exactly the SVG's height.
+          It used to be absolutely positioned against `.chart`, which also
+          contains the axis row and the readout -- 235px of box for ticks
+          computed as a percentage of the 190px plot. The drift compounded
+          downward and the bottom label, the actual minimum of the data, landed
+          42px below the drawing where it read as part of the caption. */}
+      <div className="chart__plot">
+        <div className="chart__scale" aria-hidden="true">
+          {rules.map((r) => (
+            <span key={r.y} style={{ top: `${(r.y / height) * 100}%` }}>
+              {format(r.value)}
+            </span>
+          ))}
+        </div>
 
-      <svg
+        <svg
         className="chart__svg"
         viewBox={`0 0 ${W} ${height}`}
         role="img"
@@ -149,7 +136,8 @@ export function AreaChart({ values, labels = [], height = 190, format = (v) => v
             <circle cx={active.x} cy={active.y} r="4" className="chart__dot" />
           </>
         )}
-      </svg>
+        </svg>
+      </div>
 
       {labels.length > 1 && (
         <div className="chart__axis" aria-hidden="true">
@@ -176,10 +164,19 @@ export function AreaChart({ values, labels = [], height = 190, format = (v) => v
 
 /* A ranked list where the bar IS the quantity. Used for the checks costing the
    most points and for stores by score. */
-export function RankedBars({ rows, format = (v) => v, emptyLabel = 'Nothing to rank' }) {
+export function RankedBars({ rows, format = (v) => v, emptyLabel = 'Nothing to rank', max: scale }) {
   if (!rows || rows.length === 0) return <p className="chart__none">{emptyLabel}</p>
 
-  const max = Math.max(...rows.map((r) => r.value)) || 1
+  /* `scale` is the axis these bars are measured against, and callers should
+     nearly always pass one.
+
+     Normalising to the largest value in the list -- the old default -- meant the
+     worst item always drew a full track, so a 10-point loss out of 100 rendered
+     as total failure. That also contradicted the Elevation on this same page,
+     where width is the check's weight out of 100. Two geometries for one
+     weighted rubric, and this was the one that lied. Passing max=100 makes the
+     unfilled track the points still held. */
+  const max = scale ?? (Math.max(...rows.map((r) => r.value)) || 1)
 
   return (
     <ul className="ranked">

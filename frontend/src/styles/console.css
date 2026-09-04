@@ -1514,118 +1514,36 @@ button.elevation__bay:hover .elevation__glass {
 }
 
 /* ---------------------------------------------------------------------------
-   §13  Overview
+   §13  Charts on Diagnose and Trail
 
-   Stat cards, charts and ranked bars. Every number here is measured -- there is
-   no revenue, customer or order data in this product, and a chart of any of
-   them would be a mockup. What there is: fifteen scored measurements, seventy-six
-   timestamped agent actions, and eleven stores to compare.
+   These began as an Overview page: four stat cards, a wide chart, a donut and
+   two bar panels. It scored 19/40 and an independent review called it "a generic
+   SaaS dashboard wearing Frontage's paint" -- three of its five panels restated
+   pages that already existed, and its bars contradicted the Elevation. The page
+   is gone. What survives are the two views that showed something nothing else
+   did, now sitting on the pages that own their subject.
    --------------------------------------------------------------------------- */
 
-.statgrid {
+/* The score's history beside where it stands. Collapses below the point where
+   two charts stop being readable side by side. */
+.pair {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
-  gap: 0.875rem;
-}
-
-.stat {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  padding: 1.125rem;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l);
-  box-shadow: var(--edge-lit), var(--edge-fall), var(--lift-1);
-}
-
-.stat__label {
-  font-size: 0.6875rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.stat__row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.stat__value {
-  font-family: var(--font-mono);
-  font-size: 2rem;
-  line-height: 1;
-  font-weight: 500;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.stat__sub {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.stat__sub--ok { color: var(--ok); }
-.stat__sub--warn { color: var(--warn); }
-.stat__sub--bad { color: var(--bad); }
-
-.stat__sub svg {
-  width: 13px;
-  height: 13px;
-}
-
-.stat__cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  margin-block-start: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--accent-text);
-}
-
-.stat__cta svg {
-  width: 13px;
-  height: 13px;
-}
-
-/* The sparkline is the stat's own history, not decoration -- it shares the
-   series the big chart below draws. */
-.spark {
-  flex: none;
-  overflow: visible;
-}
-
-.spark path { stroke: var(--accent); }
-.spark--ok path { stroke: var(--ok); }
-.spark--warn path { stroke: var(--warn); }
-.spark--bad path { stroke: var(--bad); }
-
-/* ---- Panels -------------------------------------------------------------- */
-
-.dash {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 0.875rem;
   align-items: start;
 }
 
-/* The two panels that need the page's full width: a time series compressed into
-   a third of the screen stops being readable, and the activity feed's rows are
-   three columns of text. */
-.dash__wide {
-  grid-column: 1 / -1;
+/* Trail's summary: the donut and its legend read as one object, side by side at
+   width and stacked when there is none. */
+.trail__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.5rem 2.25rem;
 }
 
-.card__note {
-  font-size: 0.75rem;
-  line-height: 1.55;
-  color: var(--text-muted);
-  margin-block-end: 0.875rem;
+.trail__summary .legend {
+  margin: 0;
 }
 
 /* ---- Charts -------------------------------------------------------------- */
@@ -1723,6 +1641,22 @@ button.elevation__bay:hover .elevation__glass {
 .ranked__row[data-tone='warn'] .ranked__fill { background: var(--warn); }
 .ranked__row[data-tone='bad'] .ranked__fill { background: var(--bad); }
 
+/* The store you are currently working on. Marked by identity rather than by
+   verdict -- in a panel whose whole purpose is comparison, "which one am I"
+   is the first question, and every row used to look the same. */
+.ranked__row[data-tone='accent'] .ranked__fill { background: var(--accent); }
+
+.ranked__row[data-tone='accent'] .ranked__label {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.ranked__row[data-tone='accent'] .ranked__label::after {
+  content: ' — you';
+  color: var(--accent-text);
+  font-weight: 400;
+}
+
 .ranked__val {
   font-family: var(--font-mono);
   font-size: 0.75rem;
@@ -1799,61 +1733,33 @@ button.elevation__bay:hover .elevation__glass {
 .legend__key--warn { background: var(--warn); }
 .legend__key--bad { background: var(--bad); }
 
-/* ---- Activity feed ------------------------------------------------------- */
-
-.feed {
-  display: flex;
-  flex-direction: column;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.feed__row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding-block: 0.625rem;
-  border-block-end: 1px solid var(--line);
-}
-
-.feed__row:last-child { border-block-end: none; }
-
-.feed__what {
-  font-size: 0.8125rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.feed__when {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
 @media (max-width: 640px) {
   .ranked__row {
-    grid-template-columns: minmax(0, 6rem) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr) auto;
   }
-
-  .stat__value { font-size: 1.625rem; }
 }
 
 /* The scale sits outside the SVG for the same reason the readout does: the
    viewBox is stretched to the panel width, which would distort any text in it. */
 .chart {
   position: relative;
+  margin: 0;
   padding-inline-start: 3.25rem;
+}
+
+/* Exactly the SVG's height, so a tick positioned at a percentage of it lands on
+   its own gridline. Positioning the scale against .chart put it against a box
+   that also contained the axis row and the readout. */
+.chart__plot {
+  position: relative;
+  height: 190px;
 }
 
 .chart__scale {
   position: absolute;
   inset-block: 0;
-  inset-inline-start: 0;
+  /* Pulled back out of .chart's padding, which is the gutter it lives in. */
+  inset-inline-start: -3.25rem;
   width: 3rem;
   font-family: var(--font-mono);
   font-size: 0.625rem;

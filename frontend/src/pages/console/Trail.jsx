@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
+import { Donut } from '../../components/Charts'
 import { useMerchants } from '../../context/MerchantContext'
 import { formatDateTime, formatTime } from '../../lib/format'
 
@@ -120,6 +121,15 @@ export default function Trail() {
     [actions],
   )
 
+  /* Counted from every action on record, not from the filtered view: the
+     summary describes the trail, and it should not change when you narrow the
+     list underneath it. */
+  const outcomes = useMemo(() => {
+    const counts = { success: 0, blocked: 0, failed: 0 }
+    for (const a of actions) if (a.result in counts) counts[a.result] += 1
+    return counts
+  }, [actions])
+
   return (
     <div className="stack" style={{ '--stack-gap': '1.5rem' }}>
       <header className="page-head">
@@ -131,6 +141,40 @@ export default function Trail() {
           language. Nothing here is editable.
         </p>
       </header>
+
+      {/* The shape of the record, before the record itself.
+
+         This came from a deleted Overview page, and it belongs here: the trail
+         owns agent actions and had every one of them without ever saying how
+         they turned out. Counts come from the same `actions` the list below
+         renders, so the summary cannot disagree with what you scroll through. */}
+      {actions.length > 0 && (
+        <section className="card trail__summary">
+          <Donut
+            total={actions.length}
+            centreLabel="actions"
+            slices={[
+              { key: 'success', value: outcomes.success, tone: 'ok' },
+              { key: 'blocked', value: outcomes.blocked, tone: 'warn' },
+              { key: 'failed', value: outcomes.failed, tone: 'bad' },
+            ]}
+          />
+          <ul className="legend">
+            <li>
+              <i className="legend__key legend__key--ok" />
+              {outcomes.success} completed
+            </li>
+            <li>
+              <i className="legend__key legend__key--warn" />
+              {outcomes.blocked} refused by your spending rules
+            </li>
+            <li>
+              <i className="legend__key legend__key--bad" />
+              {outcomes.failed} failed
+            </li>
+          </ul>
+        </section>
+      )}
 
       <div className="spread">
         <div className="cluster">

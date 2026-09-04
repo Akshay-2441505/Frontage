@@ -86,15 +86,6 @@ export const IconGauge = (p) => (
   </Svg>
 )
 
-/* Panels on a page: what an overview is. */
-export const IconLayout = (p) => (
-  <Svg {...p}>
-    <rect x="2.2" y="2.6" width="11.6" height="10.8" rx="1.6" />
-    <path d="M2.2 6.4h11.6" />
-    <path d="M6.6 6.4v7" />
-  </Svg>
-)
-
 export const IconWrench = (p) => (
   <Svg {...p}>
     <path d="M10.4 2.4a3.6 3.6 0 0 0-3.2 5.2l-4.6 4.6a1.3 1.3 0 0 0 1.9 1.9l4.6-4.6a3.6 3.6 0 0 0 4.5-4.7l-2 2-1.9-.5-.5-1.9 2-2a3.6 3.6 0 0 0-.8-.1Z" />
