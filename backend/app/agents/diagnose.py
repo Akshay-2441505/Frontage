@@ -54,8 +54,16 @@ def _imagery_ok(item: CatalogItem) -> bool:
 
 def _fractional_check(check_name: str, items: list[CatalogItem], predicate, fail_detail_suffix: str, pass_detail_suffix: str) -> tuple[float, dict]:
     total = len(items)
-    passed = sum(1 for i in items if predicate(i)) if total else 0
-    failed = total - passed
+    # Which items failed, not just how many. The predicate is already being
+    # evaluated per item and the answer was being thrown away -- so the console
+    # could say "6 of 26 products have no image" and then offer no way to see
+    # which six. Recording the ids here is what lets the page act on its own
+    # finding, and it keeps that list authoritative: the alternative was the
+    # frontend re-deriving the rubric from catalog fields, which is two
+    # implementations of one definition waiting to disagree.
+    failing_ids = [i.id for i in items if not predicate(i)]
+    failed = len(failing_ids)
+    passed = total - failed
     fraction = (passed / total) if total else 0
     gap = {
         "check_name": check_name,
@@ -65,6 +73,7 @@ def _fractional_check(check_name: str, items: list[CatalogItem], predicate, fail
             if failed > 0
             else f"All {total} {pass_detail_suffix}"
         ),
+        "failing_ids": failing_ids,
     }
     return fraction, gap
 

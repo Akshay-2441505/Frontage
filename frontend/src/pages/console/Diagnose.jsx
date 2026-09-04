@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../../api'
 import CatalogThumb from '../../components/CatalogThumb'
@@ -105,6 +105,54 @@ export default function Diagnose() {
   )
   const openGaps = bays.filter((b) => !b.pass)
 
+  /* Which slice of the catalog the grid is showing.
+
+     `null` is the default and means "everything with something wrong with it".
+     A check key narrows to that one check. 'all' is the escape hatch.
+
+     The page used to name a defect -- "6 of 26 products have no product image"
+     -- and then render all 26 with no filter, sort or marker, which was most of
+     its height and the reason it read as a database viewer. The failing ids
+     come from the report itself rather than being re-derived from catalog
+     fields here, so the grid can never disagree with the finding above it. */
+  const [shown, setShown] = useState(null)
+
+  const failingIdsFor = useCallback(
+    (key) => {
+      const gap = bays.find((b) => b.key === key)?.gap
+      return Array.isArray(gap?.failing_ids) ? gap.failing_ids : null
+    },
+    [bays],
+  )
+
+  /* Everything failing at least one check. Older reports predate `failing_ids`
+     and carry null, in which case there is nothing to filter on and the grid
+     falls back to showing the catalog whole -- a stale report should not make
+     products vanish. */
+  const anyFailingIds = useMemo(() => {
+    const ids = new Set()
+    let sawList = false
+    for (const bay of bays) {
+      if (!Array.isArray(bay.gap?.failing_ids)) continue
+      sawList = true
+      for (const id of bay.gap.failing_ids) ids.add(id)
+    }
+    return sawList ? ids : null
+  }, [bays])
+
+  const selectedBay = shown && shown !== 'all' ? bays.find((b) => b.key === shown) : null
+
+  const visibleCatalog = useMemo(() => {
+    if (shown === 'all') return catalog
+    if (shown) {
+      const ids = failingIdsFor(shown)
+      return ids ? catalog.filter((i) => ids.includes(i.id)) : catalog
+    }
+    if (!anyFailingIds) return catalog
+    return catalog.filter((i) => anyFailingIds.has(i.id))
+  }, [catalog, shown, anyFailingIds, failingIdsFor])
+
+
   /* The history endpoint returns oldest-first, so the first measurement is at
      index 0. This read the LAST element for three phases — which is the newest
      run, and therefore equal to `report.score` by construction, so `gained` was
@@ -132,7 +180,12 @@ export default function Diagnose() {
         </p>
       </header>
 
-      <FrontageElevation report={report} images={shopfrontImages} />
+      <FrontageElevation
+        report={report}
+        images={shopfrontImages}
+        onSelectCheck={(key) => setShown((cur) => (cur === key ? null : key))}
+        selectedCheck={shown}
+      />
 
       <div className="spread">
         <div className="cluster">
@@ -204,6 +257,24 @@ export default function Diagnose() {
                   <p>{bay.gap?.detail || bay.meta.why}</p>
                   {!bay.pass && bay.gap?.detail && bay.meta.why && <p style={{ marginBlockStart: '0.5rem' }}>{bay.meta.why}</p>}
                   {bay.meta.jargon && <p className="gap-row__jargon">{bay.meta.jargon}</p>}
+                  {/* The row names a count; this is the way to see the things it
+                      counted. Absent for the two merchant-level checks, which
+                      have no per-item verdict to show. */}
+                  {bay.gap?.failing_ids?.length > 0 && (
+                    <p style={{ marginBlockStart: '0.75rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => setShown(shown === bay.key ? null : bay.key)}
+                        aria-pressed={shown === bay.key}
+                      >
+                        {shown === bay.key
+                          ? 'Stop filtering'
+                          : `Show the ${bay.gap.failing_ids.length} ${bay.gap.failing_ids.length === 1 ? 'product' : 'products'}`}
+                        <IconArrowRight />
+                      </button>
+                    </p>
+                  )}
                 </div>
               </details>
             ))}
@@ -213,13 +284,41 @@ export default function Diagnose() {
 
       <section className="stack" style={{ '--stack-gap': '0.875rem' }}>
         <div className="spread">
+          {/* The heading says which slice you are looking at, so the grid is
+              never a bare wall of products with no stated relationship to the
+              finding above it. */}
           <h2 className="card__title">
-            What you sell{' '}
+            {selectedBay
+              ? selectedBay.meta.name
+              : shown === 'all' || !anyFailingIds
+                ? 'What you sell'
+                : 'What needs work'}{' '}
             <span className="dim num" style={{ fontWeight: 400 }}>
-              {catalog.length}
+              {visibleCatalog.length}
             </span>
           </h2>
+
+          {catalog.length > 0 && anyFailingIds && (
+            <div className="cluster">
+              {shown !== null && (
+                <button type="button" className="btn btn--quiet" onClick={() => setShown(null)}>
+                  Everything that needs work
+                </button>
+              )}
+              {shown !== 'all' && (
+                <button type="button" className="btn btn--quiet" onClick={() => setShown('all')}>
+                  Show all {catalog.length}
+                </button>
+              )}
+            </div>
+          )}
         </div>
+
+        {selectedBay && (
+          <p className="page-head__lede" style={{ marginBlockStart: '-0.25rem' }}>
+            {selectedBay.gap?.detail}
+          </p>
+        )}
 
         {catalogError && (
           <div className="notice notice--bad">
@@ -251,9 +350,26 @@ export default function Diagnose() {
           </div>
         )}
 
-        {!loadingCatalog && catalog.length > 0 && (
+        {!loadingCatalog && catalog.length > 0 && visibleCatalog.length === 0 && (
+          <div className="empty">
+            <p className="empty__title">
+              {shown ? 'Nothing fails this check' : 'Every product passes every check'}
+            </p>
+            <p className="empty__body">
+              {shown
+                ? 'Pick another bay, or show the whole catalog.'
+                : 'There is nothing here that needs work. Show the whole catalog to browse it.'}
+            </p>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShown('all')}>
+              Show all {catalog.length}
+              <IconArrowRight />
+            </button>
+          </div>
+        )}
+
+        {!loadingCatalog && visibleCatalog.length > 0 && (
           <div className="cat-grid">
-            {catalog.map((item) => (
+            {visibleCatalog.map((item) => (
               <CatalogItem key={item.id} item={item} />
             ))}
           </div>

@@ -472,6 +472,25 @@
   border: none;
   background: none;
   border-radius: 3px;
+  transition: opacity 160ms ease;
+}
+
+/* A bay is only a control when it has failing products to show, so only that
+   bay gets a pointer -- the rest stay scenery and say so by not reacting. */
+button.elevation__bay {
+  cursor: pointer;
+}
+
+button.elevation__bay:hover .elevation__glass {
+  filter: brightness(1.14);
+}
+
+/* Selection dims the others rather than highlighting the one. Highlighting
+   would fight the bay's own lit/shuttered state, which is carrying the actual
+   measurement -- brightening a shuttered bay to mean "selected" would say the
+   opposite of what the drawing is for. */
+.elevation__bays:has(button.elevation__bay[data-selected]) .elevation__bay:not([data-selected]) {
+  opacity: 0.4;
 }
 
 .elevation__glass {

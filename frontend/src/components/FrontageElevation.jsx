@@ -99,7 +99,7 @@ function bayState(fraction) {
 /* Clamps the reading so it stays inside the drawing at both extremes. */
 const readingPos = (score) => Math.min(Math.max(score / 2, 13), 87)
 
-export default function FrontageElevation({ report, images = [] }) {
+export default function FrontageElevation({ report, images = [], onSelectCheck, selectedCheck }) {
   const bays = baysFromReport(report)
   const measured = Boolean(report)
   const score = measured ? Math.max(0, Math.min(100, Number(report.score) || 0)) : 0
@@ -170,11 +170,29 @@ export default function FrontageElevation({ report, images = [] }) {
         aria-label={summary}
         style={{ '--tracks': columns }}
       >
-        {bays.map((bay, i) => (
-          <div
+        {bays.map((bay, i) => {
+          /* A bay is the control for its own check when the page can act on the
+             selection, and stays inert scenery when it cannot. Rendering a
+             <button> that does nothing would promise an interaction the drawing
+             does not have -- and a bay with no failing items has nothing to
+             show, so it is not clickable either. */
+          const selectable = Boolean(onSelectCheck) && (bay.gap?.failing_ids?.length ?? 0) > 0
+          const Tag = selectable ? 'button' : 'div'
+
+          return (
+          <Tag
             key={bay.key}
+            type={selectable ? 'button' : undefined}
             className="elevation__bay"
             data-state={bayState(bay.fraction)}
+            data-selected={selectedCheck === bay.key ? 'true' : undefined}
+            onClick={selectable ? () => onSelectCheck(bay.key) : undefined}
+            aria-pressed={selectable ? selectedCheck === bay.key : undefined}
+            title={
+              selectable
+                ? `Show the ${bay.gap.failing_ids.length} products failing ${bay.meta.bay.toLowerCase()}`
+                : undefined
+            }
             style={{ '--i': i, '--fill': bay.fraction }}
           >
             <div className="elevation__glass">
@@ -191,8 +209,9 @@ export default function FrontageElevation({ report, images = [] }) {
               )}
             </div>
             <div className="elevation__sill" />
-          </div>
-        ))}
+          </Tag>
+          )
+        })}
       </div>
 
       <div

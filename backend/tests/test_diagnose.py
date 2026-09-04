@@ -97,3 +97,28 @@ def test_full_score_when_every_check_passes(db_session, merchant):
 
     assert result["score"] == 100.0
     assert all(g["status"] == "pass" for g in result["gaps"])
+
+
+def test_item_level_gaps_name_which_items_failed(db_session, merchant):
+    """The console filters its catalog grid by a gap row, so the gap has to say which
+    items it means. Deriving that in the frontend from catalog fields would be a second
+    implementation of the rubric, free to disagree with this one."""
+    good = _item(db_session, merchant, name="Has a photo")
+    bad = _item(db_session, merchant, name="No photo", image_url=None)
+    db_session.flush()
+
+    report = run_diagnose(db_session, merchant)
+    gaps = {g["check_name"]: g for g in report["gaps"]}
+
+    imagery = gaps["product_imagery"]
+    assert imagery["status"] == "fail"
+    assert imagery["failing_ids"] == [bad.id]
+    assert good.id not in imagery["failing_ids"]
+
+    # A passing item-level check reports an empty list: every item was judged.
+    assert gaps["product_descriptions"]["failing_ids"] == []
+
+    # Merchant-level checks have no per-item verdict at all, so they say None
+    # rather than [] -- an empty list would claim every item passed.
+    assert gaps["agent_readable_feed"].get("failing_ids") is None
+    assert gaps["programmatic_checkout"].get("failing_ids") is None

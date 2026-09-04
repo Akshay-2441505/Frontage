@@ -39,6 +39,11 @@ class GapOut(BaseModel):
     check_name: str
     status: str  # "pass" | "fail"
     detail: str
+    # Catalog item ids failing this check. None -- not [] -- for the two
+    # merchant-level checks (a manifest and programmatic checkout), where there
+    # is no per-item verdict to give: an empty list there would claim every item
+    # passed. Also None on reports stored before this field existed.
+    failing_ids: list[str] | None = None
 
 
 class DiagnosticReportOut(BaseModel):
