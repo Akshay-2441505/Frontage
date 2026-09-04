@@ -61,4 +61,10 @@ def call_openrouter(messages: list[dict], max_tokens: int, response_format: dict
         timeout=30,
     )
     response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+    data = response.json()
+    if "choices" not in data:
+        # OpenRouter can return a 200 with an error body (e.g. a transient upstream
+        # routing failure on a free-tier model) instead of raising an HTTP error --
+        # surface that instead of a bare KeyError on the missing key.
+        raise RuntimeError(f"OpenRouter returned no completion: {data.get('error', data)}")
+    return data["choices"][0]["message"]["content"]
