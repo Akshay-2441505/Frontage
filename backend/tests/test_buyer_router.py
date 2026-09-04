@@ -196,3 +196,81 @@ def test_showcase_exclude_and_feature_are_editorial_controls(client, db_session)
     # The extra displaces the tail of the spread rather than growing the wall.
     assert len(body["products"]) == 3
     assert len({p["id"] for p in body["products"]}) == 3, "and does not repeat one product"
+
+
+def test_showcase_varies_between_visits_but_holds_its_guarantees(client, db_session):
+    """The wall is meant to be different every visit. Randomising it must not cost any
+    of the properties that made it worth showing: one product per store, every slot
+    photographed, no repeats."""
+    from app.models import CatalogItem, Merchant
+
+    for n in range(6):
+        m = Merchant(name=f"Shop {n}", catalog_source="seed")
+        db_session.add(m)
+        db_session.flush()
+        items = [
+            CatalogItem(
+                merchant_id=m.id, name=f"Shop {n} item {k}",
+                description="A description long enough to be useful to a shopping agent.",
+                price=100.0 + k, currency="INR", availability="in_stock",
+                image_url=f"https://cdn.example.com/{n}-{k}.jpg",
+            )
+            for k in range(5)
+        ]
+        db_session.add_all(items)
+        db_session.flush()
+        _publish(db_session, m, items)
+    db_session.commit()
+
+    walls = set()
+    for _ in range(25):
+        body = client.get("/buyer-agent/showcase?count=4").json()
+        products = body["products"]
+        assert len(products) == 4
+        assert all(p["image_url"] for p in products)
+        assert len({p["id"] for p in products}) == 4, "no repeated product"
+        assert len({p["merchant_id"] for p in products}) == 4, "no store twice"
+        walls.add(tuple(p["id"] for p in products))
+
+    # 6 stores of 5 products each: the odds of 25 identical draws are vanishing.
+    assert len(walls) > 1, "the wall never changed across 25 visits"
+
+
+def test_showcase_seed_pins_the_wall(client, db_session):
+    """A seed exists so a demo recording or a screenshot can be reproduced."""
+    from app.models import CatalogItem, Merchant
+
+    for n in range(4):
+        m = Merchant(name=f"Fixed {n}", catalog_source="seed")
+        db_session.add(m)
+        db_session.flush()
+        items = [
+            CatalogItem(
+                merchant_id=m.id, name=f"Fixed {n} item {k}",
+                description="A description long enough to be useful to a shopping agent.",
+                price=100.0 + k, currency="INR", availability="in_stock",
+                image_url=f"https://cdn.example.com/f{n}-{k}.jpg",
+            )
+            for k in range(4)
+        ]
+        db_session.add_all(items)
+        db_session.flush()
+        _publish(db_session, m, items)
+    db_session.commit()
+
+    first = client.get("/buyer-agent/showcase?count=3&seed=42").json()["products"]
+    second = client.get("/buyer-agent/showcase?count=3&seed=42").json()["products"]
+    assert [p["id"] for p in first] == [p["id"] for p in second]
+
+    other = client.get("/buyer-agent/showcase?count=3&seed=7").json()["products"]
+    assert [p["id"] for p in other] != [p["id"] for p in first]
+
+
+def test_showcase_response_is_not_cacheable(client, db_session, merchant, catalog_item):
+    """Variety that a proxy can freeze is not variety."""
+    catalog_item.image_url = "https://cdn.example.com/a.jpg"
+    db_session.flush()
+    _publish(db_session, merchant, [catalog_item])
+    db_session.commit()
+
+    assert client.get("/buyer-agent/showcase?count=1").headers["cache-control"] == "no-store"

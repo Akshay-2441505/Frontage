@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+import random
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.agents.buyer import _all_discoverable_products, discover, shop
@@ -45,7 +47,14 @@ def buyer_reach(db: Session = Depends(get_db)):
 
 
 @router.get("/showcase")
-def buyer_showcase(count: int = 7, exclude: str = "", feature: str = "", db: Session = Depends(get_db)):
+def buyer_showcase(
+    response: Response,
+    count: int = 7,
+    exclude: str = "",
+    feature: str = "",
+    seed: int | None = None,
+    db: Session = Depends(get_db),
+):
     """One photographed product from each of up to `count` different stores.
 
     The shop's hero wall used to build this itself by fetching the first five
@@ -58,10 +67,18 @@ def buyer_showcase(count: int = 7, exclude: str = "", feature: str = "", db: Ses
     Chosen server-side because the alternative is one request per store on page
     load, and that cost grows with exactly the thing the page is advertising.
 
-    Stores are spread across the full list rather than taken from the front, and
-    each contributes one product, so no single catalog can dominate the wall.
+    The wall is different on every visit. Which stores appear, and which of their
+    products, is drawn fresh per request -- so a second look at the site is a
+    second look at the catalog rather than the same seven tiles. Each store still
+    contributes one product, so no single catalog can dominate the wall, and with
+    more stores than slots the ones that appear rotate too.
+
     Photo-less products are excluded outright: a wall of images has nothing to do
     with a product that has none, and the 3D path needs every slot textured.
+
+    `seed` pins the shuffle when a stable wall is wanted -- recording a demo, or
+    a test that needs to assert on specific tiles. Omit it and every request
+    differs.
 
     `exclude` leaves stores out and `feature` gives a store a second slot, both
     as comma-separated merchant names or ids. Which stores belong on a hero wall,
@@ -70,6 +87,12 @@ def buyer_showcase(count: int = 7, exclude: str = "", feature: str = "", db: Ses
     surface making the choice passes it in and says why.
     """
     count = max(1, min(count, 24))
+    # An isolated Random rather than the module-level one, so seeding for a
+    # recording cannot disturb randomness anywhere else in the process.
+    rng = random.Random(seed)
+    # The variety is the point, so it must survive any cache between here and the
+    # page. Without this a proxy could freeze one wall for everyone.
+    response.headers["Cache-Control"] = "no-store"
     excluded = {part.strip().casefold() for part in exclude.split(",") if part.strip()}
     featured = {part.strip().casefold() for part in feature.split(",") if part.strip()}
 
@@ -94,12 +117,11 @@ def buyer_showcase(count: int = 7, exclude: str = "", feature: str = "", db: Ses
         name = str(by_merchant[mid][0].get("merchant_name", "")).casefold()
         return str(mid).casefold() in featured or name in featured
 
-    # Spread the picks across the whole list instead of taking a prefix.
-    if len(merchant_ids) > count:
-        step = len(merchant_ids) / count
-        chosen = [merchant_ids[int(i * step)] for i in range(count)]
-    else:
-        chosen = merchant_ids
+    # Shuffle rather than spread. An even stride over a fixed list is stable,
+    # which meant the same seven stores every visit and the store at the tail of
+    # the list appearing never.
+    rng.shuffle(merchant_ids)
+    chosen = merchant_ids[:count] if len(merchant_ids) > count else list(merchant_ids)
 
     # A featured store is guaranteed a place and gets a second one, so a single
     # category is not represented by a lone tile among six of something else.
@@ -119,15 +141,15 @@ def buyer_showcase(count: int = 7, exclude: str = "", feature: str = "", db: Ses
             chosen.remove(victim)
 
     picked = []
-    used: dict[str, int] = {}
-    for i, mid in enumerate(chosen):
-        items = by_merchant[mid]
-        # A stable offset per store rather than always item 0, which tends to be
-        # the same catalog-order hero every time. `used` keeps a featured store's
-        # second slot from repeating its first product.
-        seen_before = used.get(mid, 0)
-        used[mid] = seen_before + 1
-        picked.append(items[(i * 7 + seen_before * 11) % len(items)])
+    taken: dict[str, set[str]] = {}
+    for mid in chosen:
+        # Sample without replacement within a store, so a featured store's second
+        # slot cannot repeat the product in its first.
+        already = taken.setdefault(mid, set())
+        pool = [i for i in by_merchant[mid] if i["id"] not in already] or by_merchant[mid]
+        choice = rng.choice(pool)
+        already.add(choice["id"])
+        picked.append(choice)
 
     # Fewer stores than slots: keep filling from the largest catalogs rather than
     # returning a short wall, since a partly-empty wall reads as a loading bug.
