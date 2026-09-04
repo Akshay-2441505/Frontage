@@ -21,6 +21,11 @@ def _fake_groq_status_error(status_code: int):
     return groq.APIStatusError("request rejected", response=response, body=None)
 
 
+def _fake_groq_timeout_error():
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    return groq.APITimeoutError(request=request)
+
+
 def _published_merchant(db_session, merchant, image_url=None, image_urls=None, variant_info=None):
     item = CatalogItem(
         merchant_id=merchant.id,
@@ -370,6 +375,42 @@ def test_discover_falls_back_to_openrouter_on_a_standard_rate_limit_error(db_ses
 
     assert result["status"] == "purchase_attempted"
     fake_openrouter.assert_called_once()
+
+
+def test_discover_falls_back_to_openrouter_when_groq_times_out(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = _fake_groq_timeout_error()
+
+    fallback_payload = json.dumps(
+        {"status": "match", "selected_item_id": item1.id, "reasoning": "Match via fallback."}
+    )
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "call_openrouter", return_value=fallback_payload) as fake_openrouter,
+    ):
+        result = buyer_mod.discover(db_session, "anything")
+
+    assert result["status"] == "purchase_attempted"
+    fake_openrouter.assert_called_once()
+
+
+def test_shop_does_not_fall_back_to_openrouter_on_a_groq_timeout(db_session, merchant):
+    _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = _fake_groq_timeout_error()
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "call_openrouter") as fake_openrouter,
+    ):
+        result = buyer_mod.shop(db_session, merchant, "anything")
+
+    assert result["status"] == "failed"
+    fake_openrouter.assert_not_called()
 
 
 def test_discover_stays_failed_when_both_groq_and_openrouter_fail(db_session, merchant):

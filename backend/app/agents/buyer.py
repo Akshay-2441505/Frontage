@@ -204,8 +204,15 @@ def _resolve_goal(
                 messages=messages,
             )
             raw = completion.choices[0].message.content.strip()
-        except groq.APIStatusError as exc:
-            if allow_fallback and exc.response.status_code in (413, 429):
+        except (groq.APIStatusError, groq.APIConnectionError) as exc:
+            # APIConnectionError (APITimeoutError's own base) has no .response/status
+            # code at all -- a stall or dropped connection is unambiguous grounds for
+            # the fallback on its own, unlike APIStatusError where only a 413/429
+            # (request too large / rate limited) should trigger it, not e.g. a 500.
+            is_size_or_rate_limited = (
+                isinstance(exc, groq.APIStatusError) and exc.response.status_code in (413, 429)
+            )
+            if allow_fallback and (isinstance(exc, groq.APIConnectionError) or is_size_or_rate_limited):
                 groq_error = exc
                 used_fallback = True
                 raw = call_openrouter(messages, response_format={"type": "json_object"}).strip()

@@ -24,6 +24,11 @@ REASONING_MODEL = "openai/gpt-oss-120b"
 # gpt-oss's hidden reasoning at effort "low" is light enough that this comfortably
 # covers reasoning + the final JSON for a single-merchant prompt.
 GROQ_MAX_TOKENS = 600
+# Groq's own free `on_demand` tier has been observed stalling 15-45s on requests that
+# are nowhere near its token-rate cap -- a service-side queueing/contention issue, not
+# anything about the prompt. With no timeout, that stall is unbounded. 8s comfortably
+# clears Groq's normal response time (sub-2s, observed) while capping the abnormal one.
+GROQ_TIMEOUT_SECONDS = 8.0
 
 # Fallback model for discover()'s combined-catalog prompt when Groq's request-size/
 # rate-limit cap rejects it outright. Free tier, 256k+ context, verified live to
@@ -36,6 +41,10 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # budget (tuned for gpt-oss's much lighter reasoning spend) truncates before any
 # content comes out, so this fallback path gets its own, larger budget.
 OPENROUTER_MAX_TOKENS = 3000
+# OpenRouter is the last resort -- nothing else to fall back to -- so this stays looser
+# than Groq's timeout (a genuine slow-but-successful generation shouldn't be killed
+# prematurely), but still strictly bounded rather than the old unbounded 60s.
+OPENROUTER_TIMEOUT_SECONDS = 30
 
 
 class LLMNotConfigured(RuntimeError):
@@ -48,7 +57,7 @@ def get_client() -> Groq:
             "GROQ_API_KEY is not set. Copy .env.example to .env at the repo root and fill in "
             "a real Groq API key (free at console.groq.com)."
         )
-    return Groq(api_key=settings.groq_api_key)
+    return Groq(api_key=settings.groq_api_key, timeout=GROQ_TIMEOUT_SECONDS)
 
 
 def call_openrouter(messages: list[dict], response_format: dict) -> str:
@@ -67,7 +76,7 @@ def call_openrouter(messages: list[dict], response_format: dict) -> str:
             "response_format": response_format,
             "messages": messages,
         },
-        timeout=60,
+        timeout=OPENROUTER_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     data = response.json()

@@ -55,3 +55,33 @@ def test_call_openrouter_raises_clearly_when_content_is_empty(monkeypatch):
     with patch.object(llm_client.httpx, "post", return_value=fake_response):
         with pytest.raises(RuntimeError, match="finish_reason=length"):
             llm_client.call_openrouter([], response_format={"type": "json_object"})
+
+
+def test_call_openrouter_uses_a_bounded_timeout(monkeypatch):
+    """Groq's own service has been observed stalling for 30-45s on small requests --
+    OpenRouter is the last resort with nothing further to fall back to, so it still
+    needs a real ceiling, just not as tight as Groq's (a genuine slow-but-successful
+    generation shouldn't be killed prematurely when there's no next fallback to try)."""
+    monkeypatch.setattr(llm_client.settings, "openrouter_api_key", "sk-or-test")
+
+    fake_response = MagicMock()
+    fake_response.json.return_value = {"choices": [{"message": {"content": "{}"}}]}
+
+    with patch.object(llm_client.httpx, "post", return_value=fake_response) as fake_post:
+        llm_client.call_openrouter([], response_format={"type": "json_object"})
+
+    assert fake_post.call_args.kwargs["timeout"] == llm_client.OPENROUTER_TIMEOUT_SECONDS
+    assert llm_client.OPENROUTER_TIMEOUT_SECONDS < 60  # strictly tighter than the old unbounded 60s
+
+
+def test_get_client_sets_a_bounded_timeout(monkeypatch):
+    """Groq's own service has been observed stalling for 30-45s on small, well-under-cap
+    requests -- with no cap at all, that stall is unbounded. Every caller (shop(),
+    discover()'s shortlist phase, discover()'s resolve phase) shares this one client
+    constructor, so setting it here bounds all three at once."""
+    monkeypatch.setattr(llm_client.settings, "groq_api_key", "gsk-test")
+
+    with patch.object(llm_client, "Groq") as fake_groq_cls:
+        llm_client.get_client()
+
+    assert fake_groq_cls.call_args.kwargs["timeout"] == llm_client.GROQ_TIMEOUT_SECONDS
