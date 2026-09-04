@@ -20,3 +20,21 @@ frontend/.vite/
 # os / editor
 .DS_Store
 *.log
+
+# reference media -- kept on disk, far too large for git
+# ("AI Retail Reference.mp4" alone is 178MB, past GitHub's 100MB hard limit)
+*.mp4
+Screenshots/
+
+# vendored agent skills. skills-lock.json is the manifest and IS tracked;
+# the installed packages are restorable from it, like node_modules.
+.claude/skills/
+.agents/skills/
+.claude/worktrees/
+
+# per-session scratch from the brainstorming skill
+.superpowers/
+
+# a literal "~" directory: a skill installer cloned a public reference repo
+# here instead of into the home directory. Safe to delete.
+/~/
