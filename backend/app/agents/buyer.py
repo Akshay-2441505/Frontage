@@ -446,6 +446,21 @@ def _shortlist_products(goal: str, history: list[dict] | None, products: list[di
     return shortlisted[:SHORTLIST_CANDIDATE_LIMIT] if shortlisted else None
 
 
+def _shortlist_summary(product: dict) -> dict:
+    """Just enough of a product for a caller to show it in a list: no description, since
+    a real imported catalog carries descriptions into the thousands of characters and the
+    shortlist can hold fifty of them."""
+    return {
+        "id": product["id"],
+        "name": product["name"],
+        "price": product["price"],
+        "currency": product.get("currency"),
+        "image_url": product.get("image_url"),
+        "merchant_id": product.get("merchant_id"),
+        "merchant_name": product.get("merchant_name"),
+    }
+
+
 def discover(db: Session, goal: str, history: list[dict] | None = None) -> dict:
     products = _all_discoverable_products(db)
     if not products:
@@ -459,4 +474,18 @@ def discover(db: Session, goal: str, history: list[dict] | None = None) -> dict:
 
     shortlisted = _shortlist_products(goal, history, products)
     candidates = shortlisted if shortlisted is not None else products
-    return _resolve_goal(db, goal, history, candidates, default_merchant_id=None, allow_fallback=True)
+    result = _resolve_goal(db, goal, history, candidates, default_merchant_id=None, allow_fallback=True)
+
+    # How the answer was reached, for callers that want to show the narrowing rather than
+    # just the conclusion. Added here rather than inside _resolve_goal() because that is
+    # shared with the single-merchant shop() path, where there is no catalog-wide funnel
+    # to describe.
+    #
+    # `shortlist` is None when _shortlist_products() declined or failed: candidates is
+    # then the entire catalog, and reporting 222 products as "the shortlist" would claim a
+    # narrowing that never happened.
+    result["considered_count"] = len(products)
+    result["shortlist"] = (
+        [_shortlist_summary(p) for p in shortlisted] if shortlisted is not None else None
+    )
+    return result

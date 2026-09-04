@@ -715,3 +715,95 @@ def test_shop_dry_run_still_returns_ambiguous_and_need_more_info_normally(db_ses
 
     assert result["status"] == "need_more_info"
 
+
+
+# --- discover() reports how it narrowed -------------------------------------------
+# The funnel is the interesting part of a catalog-wide search: a caller that only sees
+# the winner cannot show that 200-odd products were read and a handful were seriously
+# considered. These fields describe that, without changing any existing one.
+
+
+def test_discover_reports_considered_count_and_shortlist(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    merchant2 = Merchant(name="Second Store", catalog_source="test")
+    db_session.add(merchant2)
+    db_session.flush()
+    item2 = _published_merchant(db_session, merchant2)
+
+    fake_client = MagicMock()
+    # First call is the shortlist pass, second is the full-detail resolve. Which product
+    # lands at index 0 depends on merchant query order, so the assertions below check
+    # membership rather than a fixed id.
+    fake_client.chat.completions.create.side_effect = [
+        _fake_completion({"relevant_indices": [0]}),
+        _fake_completion({"status": "no_match", "reasoning": "Not quite."}),
+    ]
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.discover(db_session, "something specific")
+
+    assert result["considered_count"] == 2, "both merchants' products were read"
+    assert result["shortlist"] is not None
+    assert len(result["shortlist"]) == 1, "one of the two was narrowed to"
+
+    entry = result["shortlist"][0]
+    assert entry["id"] in {item1.id, item2.id}
+    assert entry["merchant_name"] in {"Test Merchant", "Second Store"}
+    assert entry["price"] == 100.0
+    # Descriptions are deliberately absent -- a real catalog carries thousands of
+    # characters per product and the shortlist can hold fifty of them.
+    assert "description" not in entry
+
+
+def test_discover_shortlist_is_none_when_no_narrowing_happened(db_session, merchant):
+    """A failed or declined shortlist falls back to the whole catalog. Reporting that
+    as 'the shortlist' would claim a narrowing that never took place."""
+    item1 = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = [
+        _fake_completion({"relevant_indices": []}),  # declined to narrow
+        _fake_completion({"status": "match", "selected_item_id": item1.id, "reasoning": "Match."}),
+    ]
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.discover(db_session, "anything")
+
+    assert result["considered_count"] == 1
+    assert result["shortlist"] is None
+
+
+def test_discover_reports_the_funnel_on_a_no_match_too(db_session, merchant):
+    """Knowing what was read matters most when nothing came back."""
+    _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = [
+        _fake_completion({"relevant_indices": [0]}),
+        _fake_completion({"status": "no_match", "reasoning": "Nothing fits."}),
+    ]
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.discover(db_session, "a tractor engine")
+
+    assert result["status"] == "no_match"
+    assert result["considered_count"] == 1
+    assert len(result["shortlist"]) == 1
+
+
+def test_shop_does_not_gain_discover_only_fields(db_session, merchant):
+    """shop() is the single-merchant path -- there is no catalog-wide funnel to describe,
+    and adding these to _resolve_goal() would have leaked them into it."""
+    item = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Match."}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.shop(db_session, merchant, "anything", dry_run=True)
+
+    assert "considered_count" not in result
+    assert "shortlist" not in result

@@ -1,214 +1,219 @@
 # Frontage — Frontend Craft Pass
 
 **Date:** 2026-09-04
-**Status:** Design approved, ready for implementation planning
+**Status:** Rewritten after audit. Two P0s implemented; remainder ready for planning.
 
 ---
 
 ## Context
 
-Three frontend phases have shipped: two zones with a token system, the Frontage
-Elevation, Motion throughout, a product wall with a lazy WebGL layer, and an
-ink-violet console. The work is competent and none of it is broken.
+This spec was first written from a hypothesis: that the frontend reads as **generic**
+(anonymous shapes — uniform cards, a centred column, the ChatGPT hero) and **flat**
+(surfaces lit from nowhere), and that the fix was a drawing-sheet relayout of the
+console plus a light system.
 
-The problem is that it reads as **AI slop**. Asked to be specific, the two things
-setting that off were:
+**An `/impeccable critique` run — two isolated assessments, one design review and one
+detector/measurement pass — refuted the first half of that.** The spec has been
+rewritten around the evidence rather than the hypothesis.
 
-1. **Generic** — the shapes and layouts are ones you have seen a hundred times.
-   Competent but anonymous.
-2. **Flat** — nothing feels premium or crafted. Surfaces have no material quality.
+### What the audit changed
 
-Notably *not* on that list: too little motion, or incoherence between parts. This
-matters, because the instinctive fix — more effects, more 3D — is the most common
-way a design *becomes* slop. This spec adds almost no new motion. It changes
-composition and material instead.
+**"Generic" does not survive contact with the evidence.** Strip the copy from Diagnose
+and the page still cannot be repurposed: the Elevation is a shopfront generated from a
+merchant's own rubric weights, the colour reservation is a semantic system (mint only
+for money that actually moved through Razorpay; rose rather than red because a refusal
+is the system working), and the two zones assign the *same token names* to opposed
+values so every primitive is zone-agnostic. The slop detector found **2 warnings across
+36 files, zero in any JSX** — one of them a false positive (a CSS border-triangle
+drawing a disclosure caret, matched on a literal string).
 
-### Diagnosis
+The "uniform containers" claim was measured and contradicted: **19 distinct
+`border-radius` values, 15 border treatments, 9 unique shadows** are declared.
 
-**Why it reads as generic.** Every container is the same rounded rectangle with the
-same 1px border and the same padding, at every level of hierarchy. The console is a
-single centred column at `max-width: 1120px`. Nothing dominates — the Elevation is
-the signature element and it sits as one card among equals. Otto is the centred
-hero-greeting-pill-input shape, which is the single most-copied layout on the web
-right now and therefore reads as AI-made regardless of execution quality.
+**So the drawing-sheet relayout is cut.** It solved a problem the evidence says does not
+exist, and it was the largest item in the original plan.
 
-**Why it reads as flat.** Every surface is a flat fill lit from nowhere. No surface
-has a top, a bottom, or a position in space. The Elevation's "glass" is a linear
-gradient in a box.
+**"Flat" was half-right and misdiagnosed.** There *is* a material system — layered
+gradients on `.elevation`, `.elevation__glass::after`, `.elevation__spill`,
+`.cat-thumb`, `.gate`. It stops at the edge of the one illustration. The rendered
+console shows **0 box-shadows**. That is flatness in one zone, not sameness everywhere,
+and it is a much smaller job than a relayout.
 
-### Decisions taken
+**The real problems were defects, not taste.** The signature element contradicted its
+own number, and the product's core feedback loop had never rendered once.
 
-| Decision | Choice |
-|---|---|
-| Console layout | **B−** — drawing-sheet structure, plain language |
-| Material | **Both** — light system on surfaces *and* the Elevation as real glass |
-| Otto shape | **Hero on idle, narrowing field once asked** |
-| Backend | Change approved and **already implemented** (see §0) |
-| Palette / type families | **Unchanged.** Anonymous structure is the problem, not the colours |
+Design health at time of audit: **24/40 (Acceptable)**. Snapshot at
+`.impeccable/critique/2026-09-04T09-26-20Z__frontend-src-pages-console-diagnose-jsx.md`.
 
 ---
 
-## 0. Backend prerequisite — DONE
+## 0. Backend — DONE
 
-`discover()` computed its shortlist and threw it away; on a match the response
-carried only `selected_product`. Two additive fields now describe the funnel:
+`discover()` computed a shortlist and discarded it. Two additive fields now describe the
+funnel, in `backend/app/agents/buyer.py`:
 
 ```jsonc
-{
-  "status": "purchase_attempted",
-  "selected_product": { … },
-  "considered_count": 222,
-  "shortlist": [ { id, name, price, currency, image_url, merchant_id, merchant_name }, … ]
-}
+{ "considered_count": 222, "shortlist": [ { id, name, price, currency, image_url, merchant_id, merchant_name }, … ] }
 ```
 
-Implemented in `backend/app/agents/buyer.py` (`discover()` and `_shortlist_summary()`).
+Added in `discover()`, not `_resolve_goal()`, because the latter is shared with
+single-merchant `shop()` where there is no catalog-wide funnel. `shortlist` is `null`
+when no narrowing happened, rather than reporting the whole catalog as a shortlist.
+Descriptions omitted — real products carry thousands of characters and the list holds 50.
 
-- Added in `discover()`, **not** `_resolve_goal()`, because the latter is shared with
-  the single-merchant `shop()` path where there is no catalog-wide funnel to describe.
-- `shortlist` is `null` when `_shortlist_products()` declined or failed — the
-  candidate set is then the entire catalog, and reporting it as a shortlist would
-  claim a narrowing that never happened.
-- Descriptions are omitted: a real imported catalog carries products with 4,954-character
-  descriptions and the shortlist holds up to 50.
+Verified live: `considered_count: 222`, `shortlist: 19`. **102 backend tests pass.**
 
-Verified live: `considered_count: 222`, `shortlist: 19 products`. **102 backend tests
-pass** (4 new).
+## 1. The Elevation tells the truth — DONE
+
+Three defects, all in the signature element:
+
+- **Bays were all `1fr`** while weights are 25/25/20/15/10/5 — so a check worth 25 looked
+  exactly as wide as one worth 5, hiding the product's own argument that the fetchable
+  catalog matters five times more than photos. Bay width is now the weight, via a
+  `--tracks` custom property (not an inline `grid-template-columns`, so the mobile media
+  query can still override). Bays, pavement and labels share the track list and the same
+  gap and inline padding, so all three are in exact register.
+- **Weights were never normalised** to the checks a report actually contains. Five
+  merchants carry stale four-check reports; today's six-check weights summed those to 80
+  under a reading of 100 — three of them displaying **100/100**. Now scaled to whatever
+  is present, using **largest-remainder allocation** rather than per-weight rounding
+  (independent rounding produced 31.3 + 31.3 + 25 + 12.5 = 100.1, the same defect at
+  small scale). Verified: 4-check stores read `31 + 31 + 25 + 13 = 100`, 6-check stores
+  `25 + 25 + 20 + 15 + 10 + 5 = 100`.
+- **The fill ran vertically** while the dimension line measuring the same quantity ran
+  horizontally. The fill is now a horizontal `clip-path`, so **lit width across the
+  shopfront literally equals the score** — measured 85% lit against a reading of 85/100.
+
+Also: the lede's count is derived from `bays.length` (a hardcoded "Six things" contradicted
+an empty state saying "the four checks"), and the drawing gained an `aria-live` region so
+a remeasure is announced rather than changing in silence.
+
+## 2. The core feedback loop renders — DONE
+
+`Diagnose.jsx` read `history[history.length - 1]` against an **oldest-first** endpoint, so
+`first` was the newest run and equalled `report.score` by construction. `gained` was always
+exactly 0 and the badge never rendered in three phases. `DESIGN_BRIEF.md` §7 calls this
+loop the thing that "should be impossible to miss."
+
+Fixed to `history[0]`. Verified: Bloom & Thread now shows **"+35 since your first
+measurement"** against a history of `[50.0 … 85.0]`.
+
+Still open: `.delta`, `.delta__step`, `.delta__val` and `.delta__arrow` were styled and
+never wired to anything. Either wire the two-numbers-and-an-arrow component into the
+Diagnose header or delete the CSS.
 
 ---
 
-## 1. Console — drawing-sheet layout
+## 3. Otto — the money moment (P1)
 
-Frontage is named for a shop's street-facing width. The console should be laid out
-the way the thing it measures is drawn: as a sheet, not a dashboard.
+The graded failure case, and the one screen where the buyer-facing vocabulary rule breaks.
+`Outcome`'s blocked branch renders `purchase.reason` verbatim: **"mandate" twice in the
+buyer surface**, which `DESIGN_BRIEF.md` §9 forbids, with unformatted `₹4999` sitting
+above a correctly formatted `₹4,999`.
 
-**Structure.** Replace the centred column of cards with an asymmetric two-region
-sheet — a wide drawing plate and a narrow title block, divided by hairline rules
-rather than card borders.
+- Stop rendering `purchase.reason` in the buyer zone. Compose client-side from numbers
+  `BudgetBreach` already fetches: *"That's ₹4,999 and this store's shopper budget has
+  ₹1,201 left. I stopped before paying."*
+- Add remaining budget as a fourth legend item — it is the one number that lets someone act.
+- Add one action: **"Find me something under ₹1,201"**, calling `send()` with that goal.
+- Reorder the turn so the verdict sits above the product card. Peak-end currently ends on
+  a 293px hero shot of the thing you were denied.
 
-- **Title block** (right, ~200px): merchant, the score at display size, product count,
-  published version. The manifest version genuinely *is* a revision number.
-- **Drawing plate** (left, fluid): the Elevation, then regions separated by rules.
-- **No card chrome.** `.card` stops being the default container in the console.
+## 4. Diagnose's grid answers the page's own question (P1)
 
-  This does not contradict §2. Removing card chrome removes the *uniform bordered
-  rectangle as default container*; it does not remove surfaces. What still sits above
-  the sheet and therefore still takes the light treatment: the title block, product
-  tiles, buttons, inputs, and the Elevation itself. What loses its border and becomes a
-  region divided by rules: the gap list, the catalog section, the step tracker, the
-  manifest viewer. Rule of thumb — **if it would physically sit on the drawing, it is
-  lit; if it is a region of the drawing, it is ruled.**
+The gap row says "6 of 6 products have no product image", then renders all 26 products with
+no filter, sort or marker — **1,623px of a 2,645px page**. The page names a defect and
+denies you any way to act on it. This is the largest cognitive-load failure and the reason
+it reads as a database viewer.
 
-**B−, not B.** Plain language throughout — "2 gaps", not `DETAIL 2 — OPEN`; "10 of 20",
-not `10.0`; bay names, not point values. The drawing-sheet *structure* is what fixes
-generic; the drafting *vocabulary* would fight the brief's requirement that the console
-not read like a database viewer.
+- Gap rows drive the grid: clicking one filters to its failing items and re-titles the section.
+- Default to failing items, with "Show all 26" as the escape.
+- Make `.elevation__bay` a `<button>` that selects its check — the bays become the control.
 
-**One exception:** the Elevation keeps its dimension line and reading. That is the
-drawing's own language, not costume borrowed for the rest of the page.
+## 5. Accessibility and contrast (P2)
 
-**Typographic range.** Currently everything sits between 11px and 34px. Widen it: small
-mono annotations against a large score figure in the title block. Range is a large part
-of what "crafted" means and it costs nothing.
+Measured against *rendered* text on its actual background, which earlier audits did not do:
 
-Applies to every console page — `Diagnose`, `Fix`, `Trail`, `Settings`, `Connect`,
-`Preview`. A half-converted console is worse than either state.
+- **Console light theme fails AA consistently at 4.14–4.46**, every case tracing to
+  `--text-dim #6a6288` on `--bg-deep #e5e2ee`. Earlier passes measured tokens against
+  `--raised` only and reported all four combinations clean. Three of the failures
+  (`brandmark__sub`, `rail-group__label`, `rail-foot__note`) appear on every console page,
+  so one token nudge clears the majority. Re-check syntax tokens against `--bg-deep`.
+- **`shop.css:561` sets `outline: none` on `:focus`, not `:focus-visible`**, killing the
+  composer's keyboard ring. The `:focus-within` border that remains measures **1.47:1**
+  against a 3:1 threshold.
+- **No skip link** — 10 rail tab-stops before content on every console page.
+- **`MerchantPicker` ARIA is invalid**: `role="listbox"` on a `<ul>` whose `<li>` wrap
+  `role="option"`. The intervening `listitem` breaks the required parent/child
+  relationship. No arrow-key navigation, no `aria-activedescendant`, no focus move on open.
 
-## 2. Material — one light source
+Measured and already correct, for the record: **zero unclipped horizontal overflow** at
+375px on every route, and **25 of 26 tab stops** show a real 2px ring (6.87:1 in console).
 
-Not "add shadows". Define a light position **once** in tokens and derive every surface
-treatment from it.
+## 6. Extend the material system past the Elevation (P2)
 
-- **Page** sits in a soft pool (radial gradient), not a uniform fill.
-- **Raised surfaces** get a top edge that catches light (`inset 0 1px 0`), a bottom edge
-  that falls away, a contact shadow, and a cast shadow pointing away from the source.
-  Surfaces are very slightly lighter at the top — they face the light.
-- **Buttons** get the same treatment at smaller scale.
-- **Elevation glass** becomes glass: recessed inner shadow at the reveal, a specular
-  streak across the pane, warm interior, and light spilling onto the pavement below.
+The narrower, evidence-backed version of the original light-source item. One light position
+in tokens; raised surfaces get a top edge that catches, a bottom edge that falls away, and
+a cast shadow pointing away from the source. The page sits in a soft pool rather than a
+uniform fill.
 
-Roughly six tokens plus one rule per surface type, in `base.css` with per-zone values.
-Otto receives the same system with the light above a white studio rather than a violet
-room — light mode needs its own values; a dark treatment cannot be inverted.
+**Scope discipline:** the console currently renders 0 box-shadows deliberately, and the
+audit rated Aesthetic/Minimalist 3/4. This is the lowest-priority item here and should be
+done last, if at all. Overdone it becomes skeuomorphism, and the flat 1px-line treatment
+is a defensible choice rather than an accident.
 
-**Restraint is the whole job.** Overdone this becomes 2013 skeuomorphism, and the glass
-panel is where that risk lives.
+## 7. Otto — hero on idle, field once asked (product decision, unchanged)
 
-## 3. Otto — hero on idle, field once asked
+Not a response to the audit; a product decision taken before it. Otto is now one agent
+across 11 stores and 222 products, but `getCatalog(merchantId)` still drives the hero wall
+and the suggestion chips — single-store views inside a multi-store agent.
 
-**Otto is now one agent across all stores.** The per-store `<select>` is gone and
-`discover()` searches 222 products across 11 published manifests. The frontend has not
-caught up: `getCatalog(merchantId)` still drives the hero wall and the suggestion chips,
-so single-store views are living inside a multi-store agent. Both must move to the
-catalog-wide set.
+- Idle: keep the hero, add store pins to tiles and a line stating reach ("11 stores · 222
+  products"). Draw chips from across stores.
+- Asked: the field. Counter reads **222 → 19 → 1** from the new response fields; render the
+  shortlist (≤50), not all 222; conversation drops to a rail; store attribution on the tile.
+- Degradations to design, not discover: `shortlist: null`, photo-less stores, and mobile
+  (which cannot hold a field and a rail, and falls back to the conversation view).
 
-**Idle — keep the current hero, improved.**
-- Store pins on the wall tiles; mix stores so multi-store is visible before you type.
-- One line stating reach: "11 stores · 222 products".
-- Suggestion chips drawn from across stores, not one arbitrary merchant.
+## 8. Fix a fragility introduced in Phase 3
 
-**Asked — the field.** The hero gives way to the catalog narrowing:
-- A counter: **222 read → 19 shortlisted → 1 chosen**, from the new response fields.
-- The field renders the **shortlist** (≤50), not all 222 — 222 tiles is an unreadable
-  mosaic. Non-shortlisted tiles dim; the chosen product enlarges.
-- The conversation drops to a **rail** along the bottom. It is the control, not the content.
-- **Store attribution on the tile.** With results spanning eleven shops, which shop a
-  product came from is part of its identity — and a small Indian D2C brand appearing in
-  an agent's results is the pitch in one frame.
-
-**Degradations that must be designed, not discovered:**
-- `shortlist: null` (no narrowing) — show read-count and the winner, drop the middle step.
-- Photo-less stores (the two seeded ones) — the existing typographic fallback.
-- Mobile cannot hold a field and a rail; it falls back to the conversation view.
-
-## 4. Fix a fragility introduced in Phase 3
-
-`.otto` and `.console` carry `initial={{ opacity: 0 }}`, so **the entire zone's visibility
-depends on a JS animation completing**. Confirmed during this session: with
-`requestAnimationFrame` not firing, the whole app renders blank rather than merely
-un-animated.
-
-Entrances must enhance a visible element, never gate its visibility. Applies to the
-zone wrappers specifically; component-level `Reveal` usage is fine.
+`.otto` and `.console` carry `initial={{ opacity: 0 }}`, so the entire zone's visibility
+depends on a JS animation completing. Confirmed: with `requestAnimationFrame` not firing,
+the app renders blank rather than merely un-animated. Entrances must enhance a visible
+element, never gate its visibility.
 
 ---
 
 ## Sequencing
 
-This is larger than one sitting, and the order matters because each stage leaves the app
-in a shippable state:
-
-1. **§4 fragility fix** — minutes, and it removes a whole-app-blank failure mode.
-2. **§2 material system** — touches tokens only. Every later component inherits it, so
-   doing it first means the layout work is never done twice.
-3. **§1 console layout** — the largest piece. Six pages; convert all of them, since a
-   half-converted console is worse than either state.
-4. **§3 Otto** — depends on nothing above, so it can move earlier if the demo needs it.
-
-Stopping after 2 already delivers most of the "flat" fix. Stopping after 3 delivers both
-complaints for the console and leaves Otto as it is today.
+1. **§8 fragility fix** — minutes; removes a whole-app-blank failure mode.
+2. **§3 money moment** — the graded beat, and the one live vocabulary violation.
+3. **§4 Diagnose grid** — biggest usability win remaining.
+4. **§5 accessibility and contrast** — mechanical, verifiable, cheap.
+5. **§7 Otto field** — largest remaining build; independent of everything above.
+6. **§6 material** — last, and optional.
 
 ## Out of scope
 
-- Palette and type families stay as they are.
-- No new animation subsystems. No GSAP, no additional 3D beyond the existing lazy
-  `ProductWall3D`.
-- Per-merchant accent extracted from product photography — interesting, unpredictable,
-  and would gamble the AA contrast work. Revisit later.
-- `shadcn` component registry: a component library is the opposite of the fix here.
+- **The drawing-sheet relayout.** Cut — the premise was refuted.
+- Palette and type families stay.
+- No new animation subsystems; no GSAP; no 3D beyond the existing lazy `ProductWall3D`.
+- Per-merchant accent extracted from photography — unpredictable, and would gamble the
+  contrast work.
+- `shadcn` as a component library. Its Radix primitives remain a legitimate answer for
+  §5's `MerchantPicker` ARIA defects, taking behaviour only, not styling.
 
 ## Verification
 
-1. Both servers up; open **`http://localhost:5173`** — CORS is pinned to that literal
-   in `backend/app/main.py`; `127.0.0.1` fails silently.
-2. Every console page in the sheet layout — no page left in the old card stack.
-3. Contrast re-audited across **all four** zone/theme combinations. Gradients change the
-   effective background a token sits on, so the Phase 1/2 AA results do not carry over.
-4. Otto: idle hero, then the field, on an image-rich store and with `shortlist: null`.
-5. The counter's numbers match the response — not recomputed client-side.
-6. `prefers-reduced-motion`: entrances static. **Verify by toggling it in OS settings** —
-   this has gone unverified for three phases because the media query cannot be emulated
-   from the tooling here.
-7. Zone wrappers render with JS animation disabled (the §4 fix).
-8. Mobile 375px, no horizontal overflow in either zone.
-9. `npm --prefix frontend run lint` and `build` clean; `pytest` — 102 passing.
+1. Open **`http://localhost:5173`** — CORS is pinned to that literal; `127.0.0.1` fails silently.
+2. Elevation weights sum to exactly 100 on both 4-check and 6-check merchants, and lit
+   width equals the reading.
+3. The gain badge renders on a merchant with history.
+4. Contrast re-measured on **rendered text against its actual background**, all four
+   zone/theme combinations — not tokens against `--raised`.
+5. `prefers-reduced-motion`: entrances static. **Verify in OS settings** — unverified for
+   three phases because the media query cannot be emulated from this tooling.
+6. Mobile 375px, no unclipped horizontal overflow.
+7. `npm --prefix frontend run lint` and `build` clean; `pytest` 102 passing; detector still
+   at 2 known findings.
+8. Re-run `/impeccable critique` and compare against the 24/40 baseline.

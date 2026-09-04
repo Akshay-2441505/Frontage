@@ -1,0 +1,1374 @@
+/* ============================================================================
+   console.css — the merchant console. A night street with a lit shopfront.
+
+   Ground is blue-black, not neutral: this is a street after dark, not a generic
+   dark dashboard. Amber is shop-window light and marks what an agent can SEE.
+   Blue marks machine/agent activity. Green is reserved exclusively for money
+   that actually moved through Razorpay, so it never gets diluted.
+   ========================================================================= */
+
+.zone-console {
+  color-scheme: dark;
+
+  /* Ink violet, not blue-black. The old ground plus a sodium-amber shopfront put
+     a lot of saturated orange on screen and the whole console read as hot. Here
+     the ground is deep and neutral-warm, the accents are pulled well down in
+     chroma and reserved strictly for state, and the colour that carries the page
+     comes from the merchant's own product photography. */
+  --bg: #12101c;
+  --bg-deep: #0b0913;
+  --surface: #1a1727;
+  --raised: #232032;
+  --line: #2b2740;
+  --line-strong: #3a3453;
+  --line-hover: #514873;
+  --input-bg: #0f0d19;
+
+  --text: #eeebf6;
+  --text-muted: #a49dbd;
+  /* Small text everywhere — eyebrows, hints, table headers — so it has to clear
+     AA against --raised on its own rather than lean on being decorative. */
+  --text-dim: #8f87ab;
+
+  /* Periwinkle: the agent's colour, and the primary action. Sits in the same
+     family as the ground so it reads as part of the room, not stuck onto it. */
+  --accent: #9f8cff;
+  --accent-hover: #b4a5ff;
+  --accent-ink: #14102a;
+  --accent-soft: rgba(159, 140, 255, 0.16);
+  --accent-line: rgba(159, 140, 255, 0.42);
+  --accent-text: #b0a1ff;
+
+  /* Sky: a machine reading, fetching, deciding. */
+  --info: #7cc4ff;
+  --info-soft: rgba(124, 196, 255, 0.13);
+  --info-line: rgba(124, 196, 255, 0.38);
+
+  /* Mint, and only ever for money that actually moved. */
+  --ok: #5fd3a6;
+  --ok-soft: rgba(95, 211, 166, 0.13);
+  --ok-line: rgba(95, 211, 166, 0.38);
+
+  --warn: #e9b872;
+  --warn-soft: rgba(233, 184, 114, 0.13);
+  --warn-line: rgba(233, 184, 114, 0.38);
+
+  /* Rose rather than red — a refusal is the system working, not an error. */
+  --bad: #f2858a;
+  --bad-soft: rgba(242, 133, 138, 0.13);
+  --bad-line: rgba(242, 133, 138, 0.4);
+
+  --focus: #9f8cff;
+
+  /* A lit window is warm white light, not orange glass — what gives it colour is
+     the merchant's product photography showing through from inside. */
+  --glass-lit-a: #fff3e0;
+  --glass-lit-b: #d9b98c;
+  --glass-shut: #191627;
+  --shutter-slat: rgba(255, 255, 255, 0.05);
+  --pier: #262137;
+  --pavement: #100e1a;
+
+  --radius-s: 5px;
+  --radius-m: 8px;
+  --radius-l: 12px;
+
+  --font-display: 'Archivo', system-ui, 'Segoe UI', sans-serif;
+  --font-body: 'Archivo', system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+/* Daylight. Same street at midday — the frontage is still measurable, the lit
+   bays are now clear glass against a bright sky rather than glowing at night. */
+.zone-console[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f2f0f7;
+  --bg-deep: #e5e2ee;
+  --surface: #ffffff;
+  --raised: #f8f7fc;
+  --line: #e2dfec;
+  --line-strong: #cbc6db;
+  --line-hover: #a49cbe;
+  --input-bg: #ffffff;
+
+  --text: #17142a;
+  --text-muted: #5b5478;
+  --text-dim: #6a6288;
+
+  --accent: #6d4fd6;
+  --accent-hover: #5a3dc0;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(109, 79, 214, 0.09);
+  --accent-line: rgba(109, 79, 214, 0.3);
+  --accent-text: #5f42c4;
+
+  --info: #1f63c9;
+  --info-soft: rgba(31, 99, 201, 0.09);
+  --info-line: rgba(31, 99, 201, 0.3);
+
+  --ok: #0f7a52;
+  --ok-soft: rgba(15, 122, 82, 0.1);
+  --ok-line: rgba(15, 122, 82, 0.3);
+
+  --warn: #8a5a00;
+  --warn-soft: rgba(138, 90, 0, 0.1);
+  --warn-line: rgba(138, 90, 0, 0.3);
+
+  --bad: #c0353c;
+  --bad-soft: rgba(192, 53, 60, 0.09);
+  --bad-line: rgba(192, 53, 60, 0.3);
+
+  --focus: #6d4fd6;
+
+  /* Daylight still has to separate open from shuttered at a glance, so the
+     contrast is carried by hue as well as value: a lit bay stays warm, a
+     shuttered one is a cold grey roller door. Two pale blues would read as the
+     same bay twice. */
+  --glass-lit-a: #fff0d4;
+  --glass-lit-b: #c9a97c;
+  --glass-shut: #a09ab4;
+  --shutter-slat: rgba(0, 0, 0, 0.13);
+  --pier: #b3adc6;
+  --pavement: #cdc8dc;
+}
+
+/* ---- Shell --------------------------------------------------------------- */
+
+.console {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.console__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem 1rem;
+  background: var(--bg-deep);
+  border-inline-end: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+}
+
+.console__main {
+  min-width: 0;
+  padding: 1.75rem 2rem 4rem;
+}
+
+.console__inner {
+  max-width: 1120px;
+  margin-inline: auto;
+}
+
+.rail-foot {
+  margin-block-start: auto;
+}
+
+/* ---- Brand --------------------------------------------------------------- */
+
+.brandmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.brandmark__glyph {
+  flex: none;
+}
+
+.brandmark__word {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 800;
+  font-stretch: 112%;
+  letter-spacing: 0.02em;
+}
+
+.brandmark__sub {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-block-start: 1px;
+}
+
+/* ---- Rail navigation ----------------------------------------------------- */
+
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.rail-group__label {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0 0.625rem;
+  margin-block-end: 0.5rem;
+}
+
+.rail-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-s);
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 0.8438rem;
+  font-weight: 500;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.rail-link:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.rail-link.active {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.rail-link.active .rail-link__step {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.rail-link__step {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.rail-link__count {
+  margin-inline-start: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+}
+
+/* ---- Page headers -------------------------------------------------------- */
+
+.page-head {
+  margin-block-end: 1.5rem;
+}
+
+.page-head__title {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.125rem);
+  font-weight: 800;
+  font-stretch: 108%;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  color: var(--text);
+}
+
+.page-head__lede {
+  margin-block-start: 0.5rem;
+  max-width: 62ch;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* ============================================================================
+   THE FRONTAGE ELEVATION — the signature.
+
+   Four bays, one per rubric check, 25 points each. A passing check is a lit,
+   glazed bay spilling light onto the pavement. A failing check is shuttered.
+   The dimension line above spans only the lit width: that is the merchant's
+   visible frontage, drawn the way a surveyor would draw it.
+   ========================================================================= */
+
+.elevation {
+  margin: 0;
+  padding: 1.5rem 1.5rem 1.25rem;
+  background: linear-gradient(180deg, var(--bg-deep) 0%, var(--surface) 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+}
+
+.elevation__measure {
+  position: relative;
+  height: 2.25rem;
+  margin-block-end: 0.875rem;
+}
+
+/* Full-width extension line: the frontage you could have. */
+.elevation__measure::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.375rem;
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--line-strong) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.elevation__dim {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 0.75rem;
+  border-inline: 1px solid var(--accent);
+  /* No CSS transition on width. Motion drives this from the same value as the
+     number and the reading's position, and a transition here would animate
+     Motion's own per-frame output — two easings fighting over one property. */
+}
+
+.elevation__dim::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.375rem;
+  height: 1px;
+  background: var(--accent);
+}
+
+.elevation__reading {
+  position: absolute;
+  bottom: 1.125rem;
+  transform: translateX(-50%);
+  padding: 0 0.375rem;
+  background: var(--bg-deep);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--accent-text);
+  white-space: nowrap;
+  /* Driven by Motion alongside the line — see .elevation__dim. */
+}
+
+.elevation__reading small {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.elevation__bays {
+  display: grid;
+  grid-template-columns: var(--tracks, repeat(6, minmax(0, 1fr)));
+  gap: 6px;
+  padding: 6px;
+  background: var(--pier);
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+}
+
+.elevation__bay {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: start;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 3px;
+}
+
+.elevation__glass {
+  position: relative;
+  height: clamp(84px, 13vw, 132px);
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+  background: var(--glass-shut);
+  transition: background 700ms ease;
+  transition-delay: calc(var(--i, 0) * 110ms);
+}
+
+/* Shutter slats on a dark bay. */
+.elevation__glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--shutter-slat) 0 3px,
+    transparent 3px 7px
+  );
+  opacity: 1;
+  transition: opacity 500ms ease;
+  transition-delay: calc(var(--i, 0) * 110ms);
+}
+
+/* Warm interior + glazing bars on a lit bay. */
+.elevation__glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background:
+    linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    repeating-linear-gradient(90deg, transparent 0 26px, rgba(0, 0, 0, 0.14) 26px 28px),
+    linear-gradient(190deg, var(--glass-lit-a) 0%, var(--glass-lit-b) 100%);
+  transition: opacity 700ms ease;
+  transition-delay: calc(var(--i, 0) * 110ms);
+}
+
+/* A fully-lit bay drops its shutter entirely. A partial one keeps the shutter
+   showing through the dark upper portion, so it reads as a half-lit window
+   rather than a dimmer one. */
+/* The goods behind the glass. Clipped by the same --fill as the light, so a
+   half-lit bay shows stock in its lit half only — the dark half is genuinely
+   shuttered, not dimmed. Sits under the warm gradient (::after) which is what
+   makes it read as being seen through a window rather than pasted on. */
+.elevation__goods {
+  position: absolute;
+  inset: 0;
+  /* Above the warm glass rather than behind it: ::after paints last, so a layer
+     underneath would simply be covered. Multiplying into the light is also the
+     truer effect — stock silhouetted against a backlit window, picking up the
+     warmth of it, instead of a photo pasted onto a pane. */
+  z-index: 1;
+  mix-blend-mode: multiply;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  filter: blur(3px) saturate(1.1);
+  transform: scale(1.18);
+  transition: opacity 700ms ease;
+  transition-delay: calc(var(--i, 0) * 110ms);
+}
+
+.elevation__bay[data-state='lit'] .elevation__goods,
+.elevation__bay[data-state='partial'] .elevation__goods {
+  opacity: 0.62;
+  clip-path: inset(0 calc((1 - var(--fill, 1)) * 100%) 0 0);
+}
+
+.elevation__bay[data-state='lit'] .elevation__glass::before {
+  opacity: 0;
+}
+
+.elevation__bay[data-state='lit'] .elevation__glass::after,
+.elevation__bay[data-state='partial'] .elevation__glass::after {
+  opacity: 1;
+  clip-path: inset(0 calc((1 - var(--fill, 1)) * 100%) 0 0);
+  transition:
+    opacity 700ms ease,
+    clip-path 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: calc(var(--i, 0) * 110ms);
+}
+
+.elevation__sill {
+  height: 5px;
+  background: var(--pier);
+  border-block-start: 1px solid var(--line-strong);
+}
+
+/* Pavement, and the pool of light a lit bay throws onto it. */
+.elevation__pavement {
+  position: relative;
+  height: 2.25rem;
+  background: var(--pavement);
+  border-radius: 0 0 var(--radius-m) var(--radius-m);
+  border-block-start: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: var(--tracks, repeat(6, minmax(0, 1fr)));
+  /* Matches the bays above so each pool of light falls under its own window. */
+  gap: 6px;
+  padding-inline: 6px;
+  overflow: hidden;
+}
+
+.elevation__spill {
+  opacity: 0;
+  background: radial-gradient(
+    ellipse 76% 116% at 50% -18%,
+    var(--accent-soft) 0%,
+    transparent 70%
+  );
+  transition: opacity 700ms ease;
+  transition-delay: calc(var(--i, 0) * 110ms + 160ms);
+}
+
+.elevation__spill[data-state='lit'],
+.elevation__spill[data-state='partial'] {
+  opacity: var(--fill, 1);
+}
+
+/* Bay labels below the drawing.
+
+   Same tracks, same gap and same inline padding as .elevation__bays, so each
+   label sits exactly under the bay it names. Without the matching padding the
+   two grids are proportional but offset, and a label creeps toward its
+   neighbour's bay as the widths diverge. */
+.elevation__labels {
+  display: grid;
+  grid-template-columns: var(--tracks, repeat(6, minmax(0, 1fr)));
+  gap: 6px;
+  padding-inline: 6px;
+  margin-block-start: 0.75rem;
+}
+
+.elevation__label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0 0.125rem;
+  min-width: 0;
+}
+
+.elevation__label-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.elevation__label-pts {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+}
+
+.elevation__label[data-state='lit'] .elevation__label-name,
+.elevation__label[data-state='partial'] .elevation__label-name {
+  color: var(--text);
+}
+
+.elevation__label[data-state='lit'] .elevation__label-pts,
+.elevation__label[data-state='partial'] .elevation__label-pts {
+  color: var(--accent-text);
+}
+
+@media (max-width: 640px) {
+  .elevation__labels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 6px;
+  }
+}
+
+/* ---- Gap rows ------------------------------------------------------------ */
+
+.gap-row {
+  border-block-end: 1px solid var(--line);
+}
+
+.gap-row:last-child {
+  border-block-end: none;
+}
+
+.gap-row > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 0.25rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.gap-row > summary::-webkit-details-marker {
+  display: none;
+}
+
+.gap-row__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+}
+
+.gap-row__pts {
+  margin-inline-start: auto;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.gap-row__detail {
+  padding: 0 0.25rem 1rem 2.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+  max-width: 70ch;
+}
+
+.gap-row__jargon {
+  margin-block-start: 0.5rem;
+  padding-inline-start: 0.75rem;
+  border-inline-start: 2px solid var(--line-strong);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* ---- Score delta --------------------------------------------------------- */
+
+.delta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.delta__step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.delta__val {
+  font-family: var(--font-mono);
+  font-size: 1.375rem;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.delta__step--now .delta__val {
+  color: var(--accent-text);
+}
+
+.delta__arrow {
+  color: var(--text-dim);
+  font-size: 1rem;
+}
+
+.delta__gain {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: var(--ok-soft);
+  border: 1px solid var(--ok-line);
+  color: var(--ok);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* ---- Catalog cards ------------------------------------------------------- */
+
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 0.75rem;
+}
+
+.cat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  min-width: 0;
+}
+
+.cat-item__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+.cat-thumb {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.06) 0%, transparent 55%),
+    linear-gradient(150deg, var(--raised) 0%, var(--bg-deep) 100%);
+}
+
+.cat-thumb__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cat-thumb__initial {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  opacity: 0.55;
+}
+
+.cat-item__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.cat-item__price {
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.cat-item__desc {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.cat-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-block-start: auto;
+  padding-block-start: 0.5rem;
+  border-block-start: 1px solid var(--line);
+}
+
+/* ---- Budget meter -------------------------------------------------------- */
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.meter__track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--input-bg);
+  border: 1px solid var(--line-strong);
+  overflow: hidden;
+}
+
+.meter__fill {
+  height: 100%;
+  background: var(--ok);
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A budget that is nearly gone is the single most common cause of a refused
+   purchase, so the meter says so before the refusal does. */
+.meter__fill[data-level='low'] {
+  background: var(--warn);
+}
+
+.meter__fill[data-level='over'] {
+  background: var(--bad);
+}
+
+.meter__warn {
+  color: var(--warn);
+}
+
+.meter__legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ---- Audit thread -------------------------------------------------------- */
+
+.thread {
+  position: relative;
+  padding-inline-start: 1.5rem;
+}
+
+.thread::before {
+  content: '';
+  position: absolute;
+  inset-block: 0.75rem;
+  inset-inline-start: 5px;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+.thread__step {
+  position: relative;
+  padding-block: 0.75rem;
+}
+
+.thread__step + .thread__step {
+  border-block-start: 1px solid var(--line);
+}
+
+.thread__step::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: -1.5rem;
+  top: 1.0625rem;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--text-dim);
+}
+
+.thread__step[data-result='success']::before {
+  border-color: var(--ok);
+}
+
+.thread__step[data-result='blocked']::before {
+  border-color: var(--bad);
+}
+
+.thread__step[data-result='failed']::before {
+  border-color: var(--warn);
+}
+
+.thread__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-end: 0.3125rem;
+}
+
+.thread__agent {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--info);
+}
+
+.thread__time {
+  margin-inline-start: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+}
+
+.thread__reason {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 78ch;
+  overflow-wrap: anywhere;
+}
+
+.thread__action {
+  margin-block-start: 0.3125rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Manifest viewer ----------------------------------------------------- */
+
+.manifest-url {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--input-bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+}
+
+.manifest-url__path {
+  flex: 1 1 320px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--info);
+  overflow-wrap: anywhere;
+}
+
+.manifest-fields {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.manifest-field {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.4375rem 0;
+  border-block-end: 1px solid var(--line);
+  font-size: 0.8125rem;
+}
+
+.manifest-field:last-child {
+  border-block-end: none;
+}
+
+.manifest-field__key {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.manifest-field__val {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.manifest-field__val--empty {
+  color: var(--bad);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 560px) {
+  .manifest-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.125rem;
+  }
+}
+
+.code-block {
+  margin: 0;
+  padding: 0.875rem;
+  background: var(--bg-deep);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+  overflow-x: auto;
+  max-height: 24rem;
+}
+
+.tok-key {
+  color: var(--info);
+}
+
+.tok-str {
+  color: var(--ok);
+}
+
+.tok-num {
+  color: var(--accent-text);
+}
+
+.tok-bool {
+  color: var(--bad);
+}
+
+/* ---- Steps (Fix flow) ---------------------------------------------------- */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.625rem;
+}
+
+@media (max-width: 720px) {
+  .steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.875rem;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.step[data-state='active'] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.step[data-state='done'] {
+  border-color: var(--ok-line);
+}
+
+.step__n {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+.step[data-state='active'] .step__n {
+  color: var(--accent-text);
+}
+
+.step[data-state='done'] .step__n {
+  color: var(--ok);
+}
+
+.step__title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.step__body {
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* ---- Merchant picker ----------------------------------------------------- */
+
+.picker {
+  position: relative;
+}
+
+.picker__button {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  text-align: start;
+  min-width: 0;
+}
+
+.picker__button:hover {
+  border-color: var(--line-hover);
+}
+
+.picker__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__score {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--accent-text);
+}
+
+.picker__menu {
+  position: absolute;
+  z-index: 40;
+  inset-inline: 0;
+  top: calc(100% + 4px);
+  max-height: 19rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+}
+
+.picker__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: var(--radius-s);
+  text-align: start;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.picker__option:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.picker__option[aria-selected='true'] {
+  color: var(--text);
+  background: var(--raised);
+}
+
+/* ---- Dev drawer (quarantined) -------------------------------------------- */
+
+.devbox {
+  border: 1px dashed var(--warn-line);
+  border-radius: var(--radius-m);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 9px,
+    var(--warn-soft) 9px 18px
+  );
+}
+
+.devbox > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--warn);
+}
+
+.devbox > summary::-webkit-details-marker {
+  display: none;
+}
+
+.devbox__body {
+  padding: 0 0.875rem 0.875rem;
+}
+
+/* ---- Entry gate ---------------------------------------------------------- */
+
+.gate {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 2.5rem 1.25rem;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 0%, rgba(255, 176, 58, 0.09) 0%, transparent 62%),
+    var(--bg);
+}
+
+.gate__inner {
+  width: 100%;
+  max-width: 760px;
+}
+
+.gate__thesis {
+  font-family: var(--font-display);
+  font-size: clamp(1.625rem, 1.1rem + 2.3vw, 2.5rem);
+  font-weight: 800;
+  font-stretch: 106%;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  max-width: 20ch;
+}
+
+.gate__thesis em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.gate__doors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem;
+}
+
+@media (max-width: 640px) {
+  .gate__doors {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.gate__door {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  text-decoration: none;
+  color: var(--text);
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    background-color 160ms ease;
+}
+
+.gate__door:hover {
+  border-color: var(--accent-line);
+  background: var(--raised);
+  transform: translateY(-2px);
+}
+
+.gate__door-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.gate__door-body {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.gate__door-go {
+  margin-block-start: 0.375rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--accent-text);
+}
+
+/* A row of shopfronts, most of them shuttered. Small on purpose — the full
+   drawing is the Diagnose page's job, this is only a motif. */
+.gate__street {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 4px;
+  height: 62px;
+  padding-block-end: 6px;
+  border-block-end: 1px solid var(--line-strong);
+}
+
+.gate__unit {
+  position: relative;
+  border-radius: 2px 2px 0 0;
+  background: var(--glass-shut);
+  border-block-end: 3px solid var(--pier);
+  background-image: repeating-linear-gradient(
+    180deg,
+    var(--shutter-slat) 0 3px,
+    transparent 3px 7px
+  );
+}
+
+.gate__unit[data-lit='true'] {
+  background-image: linear-gradient(180deg, var(--glass-lit-a) 0%, var(--glass-lit-b) 100%);
+}
+
+/* The one thing this motif has to say is how rare a lit shop is, so the lit
+   ones get a glow the dark ones cannot. */
+.gate__unit[data-lit='true']::after {
+  content: '';
+  position: absolute;
+  inset: -60% -110% -30%;
+  background: radial-gradient(ellipse at 50% 60%, var(--accent-soft) 0%, transparent 68%);
+  pointer-events: none;
+}
+
+@media (max-width: 560px) {
+  .gate__street {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+
+/* ---- Not found ----------------------------------------------------------- */
+
+.nf {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem;
+  background: var(--bg);
+  text-align: center;
+}
+
+/* ============================================================================
+   Narrow screens. Kept at the end of the file deliberately: these override base
+   rules defined further up, and at equal specificity the later rule wins.
+   ========================================================================= */
+
+@media (max-width: 900px) {
+  .console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The rail becomes a compact header — nav groups turn into one horizontal
+     strip so it costs a couple of hundred pixels rather than a full screen of
+     scrolling before any content appears. */
+  .console__rail {
+    position: static;
+    height: auto;
+    overflow: visible;
+    gap: 0.625rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .rail-group {
+    flex-direction: row;
+    gap: 0.375rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding-block-end: 0.125rem;
+  }
+
+  .rail-group__label {
+    display: none;
+  }
+
+  .rail-link {
+    flex: none;
+    white-space: nowrap;
+    padding: 0.4375rem 0.625rem;
+  }
+
+  .rail-link__count {
+    display: none;
+  }
+
+  .rail-foot {
+    margin-block-start: 0;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .rail-foot > * + * {
+    margin-block-start: 0;
+  }
+
+  .rail-foot .btn--block {
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  .rail-foot__note {
+    display: none;
+  }
+
+  .console__main {
+    padding: 1.25rem 1rem 3rem;
+  }
+
+  .elevation {
+    padding: 1rem 1rem 0.875rem;
+  }
+}
