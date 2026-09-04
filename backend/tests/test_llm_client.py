@@ -57,6 +57,24 @@ def test_call_openrouter_raises_clearly_when_content_is_empty(monkeypatch):
             llm_client.call_openrouter([], response_format={"type": "json_object"})
 
 
+def test_call_openrouter_raises_clearly_when_content_is_whitespace_only(monkeypatch):
+    """Found live: a reasoning model that nearly (not quite) exhausts max_tokens can
+    finish with content that's just trailing whitespace/newlines -- truthy as a raw
+    Python string (the old `if not content` guard didn't catch it), but the caller
+    strips it before json.loads(), turning it into an empty string and a confusing
+    bare JSONDecodeError instead of this clear one."""
+    monkeypatch.setattr(llm_client.settings, "openrouter_api_key", "sk-or-test")
+
+    fake_response = MagicMock()
+    fake_response.json.return_value = {
+        "choices": [{"finish_reason": "length", "message": {"content": "   \n  "}}]
+    }
+
+    with patch.object(llm_client.httpx, "post", return_value=fake_response):
+        with pytest.raises(RuntimeError, match="finish_reason=length"):
+            llm_client.call_openrouter([], response_format={"type": "json_object"})
+
+
 def test_call_openrouter_uses_a_bounded_timeout(monkeypatch):
     """Groq's own service has been observed stalling for 30-45s on small requests --
     OpenRouter is the last resort with nothing further to fall back to, so it still

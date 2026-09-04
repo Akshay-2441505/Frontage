@@ -92,7 +92,7 @@ def call_openrouter(messages: list[dict], response_format: dict) -> str:
         raise RuntimeError(f"OpenRouter returned no completion: {data.get('error', data)}")
     choice = data["choices"][0]
     content = choice["message"]["content"]
-    if not content:
+    if not content or not content.strip():
         # A reasoning model that hits max_tokens mid-reasoning finishes with
         # finish_reason "length" and empty/null content -- the same failure shape
         # as the missing-'choices' case above, just one level deeper.
