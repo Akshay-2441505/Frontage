@@ -1,7 +1,7 @@
 # Frontage — Frontend Craft Pass
 
 **Date:** 2026-09-04
-**Status:** Rewritten after audit. Both P0s, §8, §3, §7 and §6 implemented; §4 and §5 remain.
+**Status:** Rewritten after audit. All sections implemented. Remaining: the dead `.delta` CSS, an unverified `prefers-reduced-motion` pass, and an `/impeccable critique` re-run against the 24/40 baseline.
 
 ---
 
@@ -180,25 +180,51 @@ it reads as a database viewer.
 - Default to failing items, with "Show all 26" as the escape.
 - Make `.elevation__bay` a `<button>` that selects its check — the bays become the control.
 
-## 5. Accessibility and contrast (P2)
+## 5. Accessibility and contrast — DONE
 
-Measured against *rendered* text on its actual background, which earlier audits did not do:
+Measured against *rendered* text on its actual background, in both themes, on every
+console route and the shop.
 
-- **Console light theme fails AA consistently at 4.14–4.46**, every case tracing to
-  `--text-dim #6a6288` on `--bg-deep #e5e2ee`. Earlier passes measured tokens against
-  `--raised` only and reported all four combinations clean. Three of the failures
-  (`brandmark__sub`, `rail-group__label`, `rail-foot__note`) appear on every console page,
-  so one token nudge clears the majority. Re-check syntax tokens against `--bg-deep`.
-- **`shop.css:561` sets `outline: none` on `:focus`, not `:focus-visible`**, killing the
-  composer's keyboard ring. The `:focus-within` border that remains measures **1.47:1**
-  against a 3:1 threshold.
-- **No skip link** — 10 rail tab-stops before content on every console page.
-- **`MerchantPicker` ARIA is invalid**: `role="listbox"` on a `<ul>` whose `<li>` wrap
-  `role="option"`. The intervening `listitem` breaks the required parent/child
-  relationship. No arrow-key navigation, no `aria-activedescendant`, no focus move on open.
+**Contrast.** `--text-dim #6a6288` measured **4.43** on `--bg-deep` — the rail's ground,
+and so the ground under `brandmark__sub`, `rail-group__label` and `rail-foot__note`, three
+labels on every console page. Now `#675f85`: 4.63, still lighter than `--text-muted` (5.51)
+so the hierarchy reads.
 
-Measured and already correct, for the record: **zero unclipped horizontal overflow** at
-375px on every route, and **25 of 26 tab stops** show a real 2px ring (6.87:1 in console).
+The syntax highlighting on Fix failed identically and for the same reason: `--info`, `--ok`
+and `--bad` were checked against `--surface`, but the code block sits on `--bg-deep`, where
+at 9–11px they landed at **4.19–4.46**. Three units of ink each. The `-soft`/`-line`
+variants are untouched — backgrounds and borders, held to 3:1, already clear.
+
+**Skip links** in both zones, now the first tab stop, skipping 10 rail stops. `:focus`, not
+`:focus-visible`: the link is off-screen until focused, so every focus it gets is already a
+keyboard focus, and narrowing the selector only risks a link that takes focus while staying
+invisible.
+
+**The composer** set `outline: none` on `:focus`, removing the ring for the only people it
+serves. Its wrapper's `focus-within` ring is `--accent-soft`, a low-alpha wash well under
+3:1 — decoration standing in for an indicator. Now a real 2px outline on `:focus-visible`,
+measuring 4.04 light / 6.41 dark.
+
+**MerchantPicker** is rewritten to the APG listbox pattern. The old markup put
+`role="listbox"` on a `<ul>` whose `<li>` wrapped `role="option"` buttons, so the implicit
+`listitem` broke the required parent/child relationship and assistive tech saw a listbox
+containing no options at all. Options are now direct children, focus moves to the listbox
+and `aria-activedescendant` names the active option, and opening lands on the current store.
+Arrows wrap, Home/End jump, Enter commits, Escape closes and returns focus, Tab closes
+without committing. Selection keeps the filled ground and the active option takes a ring —
+if both were a fill, arrowing off the current store would look like nothing happened.
+
+### Method note, for the next audit
+
+**The browser pane starves `requestAnimationFrame`, so a theme toggle leaves CSS transitions
+stalled at an intermediate colour, and any reading taken during one is fiction.** Three
+separate rounds of "failures" here — `page-head__title` at 1.05, the rail step badges at
+2.97, a primary button at 2.74 — were all mid-transition artifacts that measured correctly
+once transitions were disabled. Inject
+`*,*::before,*::after{transition:none!important;animation:none!important}` before auditing
+colour in this environment.
+
+Verified: **7 console routes + the shop, both themes each, zero failures.**
 
 ## 6. Material system — DONE
 
@@ -333,7 +359,7 @@ element, never gate its visibility.
 1. ~~**§8 fragility fix**~~ — done.
 2. ~~**§3 money moment**~~ — done.
 3. **§4 Diagnose grid** — biggest usability win remaining.
-4. **§5 accessibility and contrast** — mechanical, verifiable, cheap.
+4. ~~**§5 accessibility and contrast**~~ — done.
 5. ~~**§7 Otto field**~~ — done, pulled forward: it is the only remaining item visible on
    opening the app.
 6. ~~**§6 material**~~ — done.
