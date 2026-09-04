@@ -420,3 +420,165 @@ def test_shop_does_not_fall_back_to_openrouter_on_the_same_error_discover_would(
     assert result["status"] == "failed"
     fake_openrouter.assert_not_called()
 
+
+def _product(id, name, description="", merchant_id="m1", merchant_name="Merchant", merchant_score=None):
+    return {
+        "id": id, "name": name, "description": description, "price": 100.0, "currency": "INR",
+        "availability": "in_stock", "merchant_id": merchant_id, "merchant_name": merchant_name,
+        "merchant_score": merchant_score,
+    }
+
+
+def test_shortlist_products_returns_validated_products_from_llm_response():
+    products = [_product("1", "Green Shirt"), _product("2", "Blue Hat"), _product("3", "Red Shoe")]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_ids": ["1", "3"]})
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod._shortlist_products("a green shirt", None, products)
+
+    assert {p["id"] for p in result} == {"1", "3"}
+
+
+def test_shortlist_products_drops_hallucinated_ids():
+    products = [_product("1", "Green Shirt")]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"relevant_ids": ["1", "does-not-exist"]}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod._shortlist_products("a shirt", None, products)
+
+    assert [p["id"] for p in result] == ["1"]
+
+
+def test_shortlist_products_deduplicates_repeated_ids():
+    products = [_product("1", "Green Shirt")]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_ids": ["1", "1", "1"]})
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod._shortlist_products("a shirt", None, products)
+
+    assert [p["id"] for p in result] == ["1"]
+
+
+def test_shortlist_products_returns_none_when_llm_returns_empty_list():
+    products = [_product("1", "Green Shirt")]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_ids": []})
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod._shortlist_products("recommend something nice", None, products)
+
+    assert result is None
+
+
+def test_shortlist_products_returns_none_when_every_returned_id_is_hallucinated():
+    products = [_product("1", "Green Shirt")]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"relevant_ids": ["ghost-1", "ghost-2"]}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod._shortlist_products("a shirt", None, products)
+
+    assert result is None
+
+
+def test_shortlist_products_caps_to_the_limit():
+    products = [_product(str(i), f"Widget {i}") for i in range(60)]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"relevant_ids": [str(i) for i in range(60)]}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod._shortlist_products("a widget", None, products)
+
+    assert len(result) == buyer_mod.SHORTLIST_CANDIDATE_LIMIT
+
+
+def test_shortlist_products_returns_none_on_any_llm_error():
+    products = [_product("1", "Green Shirt")]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = RuntimeError("boom")
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod._shortlist_products("a shirt", None, products)
+
+    assert result is None
+
+
+def test_shortlist_products_prompt_only_includes_id_and_name():
+    products = [_product("1", "Green Shirt", description="a very telling description", merchant_name="Acme")]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_ids": ["1"]})
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        buyer_mod._shortlist_products("a shirt", None, products)
+
+    user_message = fake_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert "Green Shirt" in user_message
+    assert "a very telling description" not in user_message
+    assert "Acme" not in user_message
+    assert "100.0" not in user_message
+
+
+def test_discover_uses_the_shortlist_to_narrow_the_final_prompt(db_session, merchant):
+    shirt = CatalogItem(
+        merchant_id=merchant.id, name="Green Striped T-Shirt", description="100% cotton",
+        price=500.0, currency="INR", availability="in_stock", agent_readable=True,
+    )
+    watch = CatalogItem(
+        merchant_id=merchant.id, name="Bangalore Watch Co Weekender", description="A steel watch",
+        price=26000.0, currency="INR", availability="in_stock", agent_readable=True,
+    )
+    db_session.add_all([shirt, watch])
+    db_session.flush()
+    db_session.add(CatalogManifest(merchant_id=merchant.id, version=1, url="/x", item_ids=[shirt.id, watch.id]))
+    db_session.flush()
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = [
+        _fake_completion({"relevant_ids": [shirt.id]}),
+        _fake_completion({"status": "match", "selected_item_id": shirt.id, "reasoning": "Match."}),
+    ]
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        buyer_mod.discover(db_session, "a green striped t-shirt")
+
+    final_prompt = fake_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert "Green Striped T-Shirt" in final_prompt
+    assert "Bangalore Watch Co Weekender" not in final_prompt
+
+
+def test_discover_sends_the_full_catalog_when_the_shortlist_cannot_narrow_down(db_session, merchant):
+    shirt = CatalogItem(
+        merchant_id=merchant.id, name="Green Striped T-Shirt", description="100% cotton",
+        price=500.0, currency="INR", availability="in_stock", agent_readable=True,
+    )
+    watch = CatalogItem(
+        merchant_id=merchant.id, name="Bangalore Watch Co Weekender", description="A steel watch",
+        price=26000.0, currency="INR", availability="in_stock", agent_readable=True,
+    )
+    db_session.add_all([shirt, watch])
+    db_session.flush()
+    db_session.add(CatalogManifest(merchant_id=merchant.id, version=1, url="/x", item_ids=[shirt.id, watch.id]))
+    db_session.flush()
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.side_effect = [
+        _fake_completion({"relevant_ids": []}),
+        _fake_completion({"status": "need_more_info", "reasoning": "What are you looking for?"}),
+    ]
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        buyer_mod.discover(db_session, "recommend something nice")
+
+    final_prompt = fake_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert "Green Striped T-Shirt" in final_prompt
+    assert "Bangalore Watch Co Weekender" in final_prompt
+

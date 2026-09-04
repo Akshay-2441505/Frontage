@@ -62,6 +62,23 @@ HISTORY_TURN_LIMIT = 3  # only the most recent turns matter for resolving a foll
 HISTORY_FIELD_CHARS = 200
 
 
+SHORTLIST_SYSTEM_PROMPT = (
+    "You are helping narrow down a large product catalog before a shopping decision is "
+    "made. You will be given a buyer's goal (and recent conversation, if any) and a list "
+    "of product names. Respond with ONLY a JSON object, no other text: "
+    '{"relevant_ids": ["<id>", ...]}\n'
+    "Include the id of every product that could plausibly be relevant to the goal -- err "
+    "on the side of including a product if you're genuinely unsure, since a later step "
+    "makes the real accept/reject decision using each product's full details. If the goal "
+    "doesn't give you enough to meaningfully narrow the catalog down -- it's too vague, or "
+    "it reads like a reply to a previous message rather than a product description -- "
+    'return {"relevant_ids": []} instead of guessing.'
+)
+
+SHORTLIST_CANDIDATE_LIMIT = 50
+SHORTLIST_MAX_TOKENS = 1000  # up to 50 returned ids (~36-char uuids) plus light reasoning
+
+
 def _format_history(history: list[dict] | None) -> str:
     """Turns the frontend's per-turn history into a short block the prompt can use to
     resolve a follow-up goal. Capped server-side regardless of what the caller sends --
@@ -340,6 +357,54 @@ def _all_discoverable_products(db: Session) -> list[dict]:
     return combined
 
 
+def _shortlist_products(goal: str, history: list[dict] | None, products: list[dict]) -> list[dict] | None:
+    """Cheap first pass over the full catalog: a much smaller prompt (just id+name, no
+    description/price/merchant fields) asks the LLM which products are worth a closer
+    look, before the expensive full-detail reasoning in _resolve_goal(). Returns a
+    shortlisted subset of `products`, or None when the LLM can't confidently narrow the
+    catalog down (or the call itself fails for any reason) -- callers must fall back to
+    the full catalog in that case, never to an empty or partial one. This is what makes
+    shortlisting strictly safer than the keyword-substring filter it replaces: relevance
+    is judged by an LLM that understands "shoes" should match "sneakers"/"flip-flops"/
+    "loafers", not by literal word overlap with brand-voice product copy that often never
+    says the category word at all."""
+    history_text = _format_history(history)
+    user_content = f"Shopping goal: {goal}\n\n"
+    if history_text:
+        user_content += f"Conversation so far:\n{history_text}\n\n"
+    user_content += (
+        "Product catalog (id and name only):\n"
+        + json.dumps([{"id": p["id"], "name": p["name"]} for p in products], separators=(",", ":"))
+    )
+
+    try:
+        client = get_client()
+        completion = client.chat.completions.create(
+            model=REASONING_MODEL,
+            max_tokens=SHORTLIST_MAX_TOKENS,
+            reasoning_effort="low",
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SHORTLIST_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+        )
+        parsed = json.loads(completion.choices[0].message.content.strip())
+        relevant_ids = parsed.get("relevant_ids") or []
+    except Exception:  # noqa: BLE001 -- any shortlist failure just means "use the full catalog"
+        return None
+
+    by_id = {p["id"]: p for p in products}
+    seen: set[str] = set()
+    shortlisted = []
+    for item_id in relevant_ids:
+        if item_id in by_id and item_id not in seen:
+            seen.add(item_id)
+            shortlisted.append(by_id[item_id])
+
+    return shortlisted[:SHORTLIST_CANDIDATE_LIMIT] if shortlisted else None
+
+
 def discover(db: Session, goal: str, history: list[dict] | None = None) -> dict:
     products = _all_discoverable_products(db)
     if not products:
@@ -351,4 +416,6 @@ def discover(db: Session, goal: str, history: list[dict] | None = None) -> dict:
         )
         return {"status": "no_merchants", "agent_action_id": action.id}
 
-    return _resolve_goal(db, goal, history, products, default_merchant_id=None, allow_fallback=True)
+    shortlisted = _shortlist_products(goal, history, products)
+    candidates = shortlisted if shortlisted is not None else products
+    return _resolve_goal(db, goal, history, candidates, default_merchant_id=None, allow_fallback=True)
