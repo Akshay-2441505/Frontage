@@ -643,3 +643,75 @@ def test_discover_sends_the_full_catalog_when_the_shortlist_cannot_narrow_down(d
     assert "Green Striped T-Shirt" in final_prompt
     assert "Bangalore Watch Co Weekender" in final_prompt
 
+
+def test_shop_dry_run_skips_the_purchase_and_returns_would_purchase(db_session, merchant):
+    item = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Match."}
+    )
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "attempt_purchase") as fake_purchase,
+    ):
+        result = buyer_mod.shop(db_session, merchant, "anything", dry_run=True)
+
+    assert result["status"] == "would_purchase"
+    assert result["selected_product"]["id"] == item.id
+    assert "purchase_result" not in result
+    fake_purchase.assert_not_called()
+
+
+def test_shop_without_dry_run_still_purchases_for_real(db_session, merchant):
+    item = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Match."}
+    )
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "attempt_purchase") as fake_purchase,
+    ):
+        fake_purchase.return_value = {"status": "success"}
+        result = buyer_mod.shop(db_session, merchant, "anything")
+
+    assert result["status"] == "purchase_attempted"
+    fake_purchase.assert_called_once()
+
+
+def test_shop_dry_run_still_logs_the_decision(db_session, merchant):
+    item = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": item.id, "reasoning": "Match."}
+    )
+
+    with (
+        patch.object(buyer_mod, "get_client", return_value=fake_client),
+        patch.object(buyer_mod, "attempt_purchase"),
+    ):
+        result = buyer_mod.shop(db_session, merchant, "anything", dry_run=True)
+
+    action = db_session.get(AgentAction, result["buyer_agent_action_id"])
+    assert "dry run" in action.action_taken.lower()
+    assert "requested purchase" not in action.action_taken.lower()
+
+
+def test_shop_dry_run_still_returns_ambiguous_and_need_more_info_normally(db_session, merchant):
+    item1 = _published_merchant(db_session, merchant)
+
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "need_more_info", "reasoning": "What's your budget?"}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod.shop(db_session, merchant, "anything", dry_run=True)
+
+    assert result["status"] == "need_more_info"
+

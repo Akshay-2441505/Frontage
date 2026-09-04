@@ -15,7 +15,7 @@ def buyer_shop(body: ShoppingGoalIn, db: Session = Depends(get_db)):
     if not merchant:
         raise HTTPException(status_code=404, detail="Merchant not found")
     history = [turn.model_dump() for turn in body.history]
-    result = shop(db, merchant, body.goal, history=history)
+    result = shop(db, merchant, body.goal, history=history, dry_run=body.dry_run)
     db.commit()
     return result
 

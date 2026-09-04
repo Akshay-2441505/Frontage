@@ -140,6 +140,7 @@ class ShoppingGoalIn(BaseModel):
     merchant_id: str
     goal: str
     history: list[ConversationTurnIn] = []
+    dry_run: bool = False
 
 
 class DiscoverGoalIn(BaseModel):

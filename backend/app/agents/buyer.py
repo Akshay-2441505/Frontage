@@ -169,6 +169,7 @@ def _resolve_goal(
     products: list[dict],
     default_merchant_id: str | None = None,
     allow_fallback: bool = False,
+    dry_run: bool = False,
 ) -> dict:
     """Shared by shop() (one merchant) and discover() (every published merchant) --
     this doesn't care where `products` came from, only that every id in it is real
@@ -178,7 +179,11 @@ def _resolve_goal(
     `allow_fallback` retries via OpenRouter when Groq rejects the request for its size
     (413) or rate limit (429) -- only discover() sets this, since only its combined
     cross-merchant prompt is large enough to hit either cap; shop()'s single-merchant
-    prompt never has, so it stays Groq-only and fails closed like every other error."""
+    prompt never has, so it stays Groq-only and fails closed like every other error.
+
+    `dry_run` skips attempt_purchase() on a match and returns "would_purchase" instead
+    of "purchase_attempted" -- only shop()'s merchant-console preview tool sets this
+    (real Otto traffic through discover() must always actually purchase)."""
     history_text = _format_history(history)
     user_content = f"Shopping goal: {goal}\n\n"
     if history_text:
@@ -306,13 +311,27 @@ def _resolve_goal(
     if used_fallback:
         reasoning += " (resolved via the OpenRouter fallback model, since Groq rejected the request.)"
 
+    action_taken = (
+        f"Selected {selected['name']} (₹{selected['price']:g}) from the manifest -- dry run, no purchase made."
+        if dry_run
+        else f"Selected {selected['name']} (₹{selected['price']:g}) from the manifest and requested purchase."
+    )
     action = _log(
         db, resolved_merchant_id, goal,
         reasoning,
-        f"Selected {selected['name']} (₹{selected['price']:g}) from the manifest and requested purchase.",
+        action_taken,
         AgentResult.success,
         output={"selected_item_id": selected_id, "used_fallback": used_fallback},
     )
+
+    if dry_run:
+        return {
+            "status": "would_purchase",
+            "goal": goal,
+            "selected_product": selected,
+            "buyer_reasoning": buyer_reasoning,
+            "buyer_agent_action_id": action.id,
+        }
 
     purchase_result = attempt_purchase(db, selected_id, selected["price"], requester="BuyerAgent")
 
@@ -326,7 +345,9 @@ def _resolve_goal(
     }
 
 
-def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None = None) -> dict:
+def shop(
+    db: Session, merchant: Merchant, goal: str, history: list[dict] | None = None, dry_run: bool = False
+) -> dict:
     products = _manifest_products(db, merchant)
     if not products:
         action = _log(
@@ -337,7 +358,7 @@ def shop(db: Session, merchant: Merchant, goal: str, history: list[dict] | None 
         )
         return {"status": "no_manifest", "agent_action_id": action.id}
 
-    return _resolve_goal(db, goal, history, products, default_merchant_id=merchant.id)
+    return _resolve_goal(db, goal, history, products, default_merchant_id=merchant.id, dry_run=dry_run)
 
 
 def _all_discoverable_products(db: Session) -> list[dict]:
