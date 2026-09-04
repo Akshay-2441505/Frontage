@@ -677,3 +677,48 @@ select.field__control {
 .otto__main:focus {
   outline: none;
 }
+
+/* ---------------------------------------------------------------------------
+   Scrollbars
+
+   Otto puts two independently scrolling panes side by side, and the platform
+   default draws each as an opaque gutter with a hard track edge -- two vertical
+   rules cutting the page into strips, right where the eye is trying to read a
+   conversation against a grid.
+
+   The thumb floats: a transparent border plus background-clip gives it padding
+   inside its own track, so it reads as a mark on the page rather than a piece of
+   window furniture. The track itself is drawn by nothing at all.
+   --------------------------------------------------------------------------- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--line-strong);
+  border-radius: 999px;
+  /* The border is what insets the thumb; without background-clip it would just
+     paint the border area too and the thumb would fill the gutter again. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--line-hover);
+}
+
+/* Where two scrollbars would otherwise meet. */
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

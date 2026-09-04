@@ -9,7 +9,7 @@ import { useMerchants } from '../../context/MerchantContext'
 import { AGENT_NAME } from '../../layouts/OttoLayout'
 import { formatMoney, initialOf } from '../../lib/format'
 import { useImageAspect } from '../../lib/useImageAspects'
-import { SPRING, STAGGER, fadeRise, useMotionOK } from '../../lib/motion'
+import { EASE, SPRING, STAGGER, fadeRise, useMotionOK } from '../../lib/motion'
 
 /* Otto's job in the demo is to make one thing legible: an outside agent can now
    find this merchant, choose from their catalog, and either buy or be stopped —
@@ -1268,10 +1268,16 @@ export default function OttoChat() {
      stays on screen rather than the whole right-hand side blanking. */
   const fieldResult = [...turns].reverse().find((t) => t.result?.considered_count)?.result || null
 
+  /* The conversation holds the middle of the page until there is actually a
+     field to make room for. It used to move the moment you sent anything: the
+     grid was permanently two columns, so a question with no answer yet sat
+     squeezed into the left third beside an empty void. */
+  const hasField = Boolean(fieldResult)
+
   return (
     <>
       <div className="otto__body">
-        <div className="otto__work">
+        <div className="otto__work" data-field={hasField ? 'true' : undefined}>
         <div className="convo" ref={convoRef}>
           <div className="convo__inner" ref={innerRef}>
             <AnimatePresence initial={false}>
@@ -1307,7 +1313,24 @@ export default function OttoChat() {
           </div>
         </div>
 
-        <OttoField result={fieldResult} onPick={askAbout} busy={busy} />
+        {/* The field arrives after the room does: the column opens over 620ms and
+            this fades in from the right behind it, so the catalog appears to
+            occupy space that was already there rather than shoving the
+            conversation aside. */}
+        <AnimatePresence>
+          {hasField && (
+            <motion.div
+              key="field"
+              className="otto__field-slot"
+              initial={motionOK ? { opacity: 0, x: 28 } : false}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 28 }}
+              transition={{ duration: motionOK ? 0.5 : 0, ease: EASE.out, delay: motionOK ? 0.22 : 0 }}
+            >
+              <OttoField result={fieldResult} onPick={askAbout} busy={busy} />
+            </motion.div>
+          )}
+        </AnimatePresence>
         </div>
       </div>
 
