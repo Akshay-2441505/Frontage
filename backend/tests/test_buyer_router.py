@@ -274,3 +274,61 @@ def test_showcase_response_is_not_cacheable(client, db_session, merchant, catalo
     db_session.commit()
 
     assert client.get("/buyer-agent/showcase?count=1").headers["cache-control"] == "no-store"
+
+
+def test_a_new_store_joins_the_wall_the_moment_it_publishes(client, db_session):
+    """The wall is generated from whatever is agent-readable right now, so a store
+    connected later needs no code change, no config and no curation to appear.
+
+    What it does need is a published manifest -- which is the product's own rule, not
+    an accident of this endpoint. An imported-but-unpublished catalog is not readable
+    by an agent, so it has no business on a wall advertising what agents can read."""
+    from app.agents.fix import publish_manifest
+    from app.models import CatalogItem, Merchant
+
+    incumbent = Merchant(name="Already Here", catalog_source="seed")
+    db_session.add(incumbent)
+    db_session.flush()
+    old = [
+        CatalogItem(
+            merchant_id=incumbent.id, name=f"Old {k}",
+            description="A description long enough to be useful to a shopping agent.",
+            price=100.0, currency="INR", availability="in_stock",
+            image_url=f"https://cdn.example.com/old-{k}.jpg", agent_readable=True,
+        )
+        for k in range(3)
+    ]
+    db_session.add_all(old)
+    db_session.flush()
+    publish_manifest(db_session, incumbent)
+    db_session.commit()
+
+    # A store arrives with photographed stock, imported but not yet published.
+    newcomer = Merchant(name="Just Connected", catalog_source="shopify")
+    db_session.add(newcomer)
+    db_session.flush()
+    fresh = [
+        CatalogItem(
+            merchant_id=newcomer.id, name=f"New {k}",
+            description="A description long enough to be useful to a shopping agent.",
+            price=200.0, currency="INR", availability="in_stock",
+            image_url=f"https://cdn.example.com/new-{k}.jpg", agent_readable=True,
+        )
+        for k in range(3)
+    ]
+    db_session.add_all(fresh)
+    db_session.commit()
+
+    seen = set()
+    for _ in range(15):
+        seen |= {p["merchant_name"] for p in client.get("/buyer-agent/showcase?count=2").json()["products"]}
+    assert "Just Connected" not in seen, "unpublished catalogs are not agent-readable"
+
+    # It publishes. Nothing else changes.
+    publish_manifest(db_session, newcomer)
+    db_session.commit()
+
+    seen_after = set()
+    for _ in range(25):
+        seen_after |= {p["merchant_name"] for p in client.get("/buyer-agent/showcase?count=2").json()["products"]}
+    assert "Just Connected" in seen_after, "a published store must reach the wall on its own"
