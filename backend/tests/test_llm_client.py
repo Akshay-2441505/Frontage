@@ -9,7 +9,7 @@ def test_call_openrouter_raises_not_configured_without_a_key(monkeypatch):
     monkeypatch.setattr(llm_client.settings, "openrouter_api_key", "")
 
     with pytest.raises(llm_client.LLMNotConfigured):
-        llm_client.call_openrouter([], max_tokens=600, response_format={"type": "json_object"})
+        llm_client.call_openrouter([], response_format={"type": "json_object"})
 
 
 def test_call_openrouter_returns_the_message_content(monkeypatch):
@@ -22,7 +22,7 @@ def test_call_openrouter_returns_the_message_content(monkeypatch):
 
     with patch.object(llm_client.httpx, "post", return_value=fake_response) as fake_post:
         result = llm_client.call_openrouter(
-            [{"role": "user", "content": "hi"}], max_tokens=600, response_format={"type": "json_object"}
+            [{"role": "user", "content": "hi"}], response_format={"type": "json_object"}
         )
 
     assert result == '{"status": "match"}'
@@ -38,4 +38,4 @@ def test_call_openrouter_raises_clearly_when_the_response_has_no_choices(monkeyp
 
     with patch.object(llm_client.httpx, "post", return_value=fake_response):
         with pytest.raises(RuntimeError, match="upstream provider unavailable"):
-            llm_client.call_openrouter([], max_tokens=600, response_format={"type": "json_object"})
+            llm_client.call_openrouter([], response_format={"type": "json_object"})

@@ -181,9 +181,7 @@ def _resolve_goal(
             raw = completion.choices[0].message.content.strip()
         except groq.APIStatusError as exc:
             if allow_fallback and exc.response.status_code in (413, 429):
-                raw = call_openrouter(
-                    messages, max_tokens=600, response_format={"type": "json_object"}
-                ).strip()
+                raw = call_openrouter(messages, response_format={"type": "json_object"}).strip()
             else:
                 raise
         parsed = json.loads(raw)

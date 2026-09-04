@@ -27,6 +27,12 @@ REASONING_MODEL = "openai/gpt-oss-120b"
 # return correctly-structured JSON.
 OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+# Even at reasoning effort "low", nemotron spends 600-900+ completion tokens on
+# hidden reasoning before it emits the actual JSON when the prompt is a full
+# multi-merchant catalog (~25-30k prompt tokens) -- verified live. Groq's 600-token
+# budget (tuned for gpt-oss's much lighter reasoning spend) truncates before any
+# content comes out, so this fallback path gets its own, larger budget.
+OPENROUTER_MAX_TOKENS = 3000
 
 
 class LLMNotConfigured(RuntimeError):
@@ -42,7 +48,7 @@ def get_client() -> Groq:
     return Groq(api_key=settings.groq_api_key)
 
 
-def call_openrouter(messages: list[dict], max_tokens: int, response_format: dict) -> str:
+def call_openrouter(messages: list[dict], response_format: dict) -> str:
     if not settings.openrouter_api_key:
         raise LLMNotConfigured(
             "OPENROUTER_API_KEY is not set. Copy .env.example to .env at the repo root and fill "
@@ -53,12 +59,12 @@ def call_openrouter(messages: list[dict], max_tokens: int, response_format: dict
         headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
         json={
             "model": OPENROUTER_MODEL,
-            "max_tokens": max_tokens,
+            "max_tokens": OPENROUTER_MAX_TOKENS,
             "reasoning": {"effort": "low"},
             "response_format": response_format,
             "messages": messages,
         },
-        timeout=30,
+        timeout=60,
     )
     response.raise_for_status()
     data = response.json()
