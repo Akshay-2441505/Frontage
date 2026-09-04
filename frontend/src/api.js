@@ -39,10 +39,10 @@ export const api = {
   getTransactionStatus: (transactionId) => request(`/transact/${transactionId}/status`),
   getAuditLog: (merchantId) =>
     request(merchantId ? `/audit-log?merchant_id=${merchantId}` : '/audit-log'),
-  buyerShop: (merchantId, goal, history = []) =>
+  buyerShop: (merchantId, goal, history = [], dryRun = false) =>
     request('/buyer-agent/shop', {
       method: 'POST',
-      body: JSON.stringify({ merchant_id: merchantId, goal, history }),
+      body: JSON.stringify({ merchant_id: merchantId, goal, history, dry_run: dryRun }),
     }),
   discover: (goal, history = []) =>
     request('/buyer-agent/discover', {
