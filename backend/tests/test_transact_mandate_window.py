@@ -109,3 +109,78 @@ def test_one_time_window_never_resets_matching_legacy_behavior(db_session, merch
     assert first["status"] == "success"
     # 1100 + 500 = 1600 > 1500 ceiling, and one_time never resets -- same as before this change
     assert second["status"] == "blocked"
+
+
+def test_ceiling_block_reports_the_windowed_numbers_it_decided_with(db_session, merchant):
+    """Otto composes its refusal copy from block_data rather than echoing `reason`, which is
+    written in mandate vocabulary for the console's audit trail. The numbers must be the
+    windowed ones the block was actually made on -- the frontend used to re-derive spend
+    from the audit log without applying the window, so a daily mandate showed a spend (and
+    an overage) that did not match the refusal."""
+    mandate = Mandate(
+        merchant_id=None, spend_ceiling=5000.0, per_transaction_cap=None,
+        window=MandateWindow.daily, allow_listed_merchants=[merchant.id], created_by="test",
+    )
+    db_session.add(mandate)
+    db_session.flush()
+
+    paid = _make_item(db_session, merchant, 4000.0)
+    with patch.object(transact_mod, "get_client", return_value=_fake_razorpay_client()):
+        transact_mod.attempt_purchase(db_session, paid.id, 4000.0)
+
+    stale = _make_item(db_session, merchant, 2000.0)
+    yesterday = datetime.datetime.utcnow() - datetime.timedelta(days=2)
+    old_action = AgentAction(
+        agent_name="Transact", merchant_id=merchant.id, reasoning="old", action_taken="old",
+        input={"requested_amount": 2000.0}, result=AgentResult.success, mandate_id=mandate.id,
+    )
+    db_session.add(old_action)
+    db_session.flush()
+    old_txn = Transaction(
+        agent_action_id=old_action.id, merchant_id=merchant.id, catalog_item_id=stale.id,
+        amount=2000.0, status=TransactionStatus.created, razorpay_order_id="order_stale",
+        created_at=yesterday,
+    )
+    db_session.add(old_txn)
+    db_session.flush()
+
+    item = _make_item(db_session, merchant, 1500.0)
+    result = transact_mod.attempt_purchase(db_session, item.id, 1500.0)
+
+    assert result["status"] == "blocked"
+    assert result["block_code"] == "spend_ceiling"
+    data = result["block_data"]
+    # 4000 inside the window; the 2000 from two days ago must not count.
+    assert data["already_spent"] == 4000.0
+    assert data["requested"] == 1500.0
+    assert data["spend_ceiling"] == 5000.0
+    assert data["remaining"] == 1000.0
+    assert data["window"] == "daily"
+
+
+def test_every_block_path_carries_a_code(db_session, merchant):
+    """`block_code` is keyword-only and required, so a new block site cannot ship without
+    one -- but that only guarantees a value, not that the existing paths are distinct."""
+    mandate = Mandate(
+        merchant_id=None, spend_ceiling=5000.0, per_transaction_cap=500.0,
+        window=MandateWindow.one_time, allow_listed_merchants=[merchant.id], created_by="test",
+    )
+    db_session.add(mandate)
+    db_session.flush()
+
+    over_cap = _make_item(db_session, merchant, 800.0)
+    cap_block = transact_mod.attempt_purchase(db_session, over_cap.id, 800.0)
+    assert cap_block["block_code"] == "per_transaction_cap"
+    assert cap_block["block_data"]["per_transaction_cap"] == 500.0
+
+    oos = _make_item(db_session, merchant, 100.0)
+    oos.availability = "out_of_stock"
+    db_session.flush()
+    oos_block = transact_mod.attempt_purchase(db_session, oos.id, 100.0)
+    assert oos_block["block_code"] == "out_of_stock"
+    assert oos_block["block_data"]["item_name"] == oos.name
+
+    stale = _make_item(db_session, merchant, 100.0)
+    price_block = transact_mod.attempt_purchase(db_session, stale.id, 250.0)
+    assert price_block["block_code"] == "price_mismatch"
+    assert price_block["block_data"] == {"expected": 250.0, "actual": 100.0, "item_name": stale.name}

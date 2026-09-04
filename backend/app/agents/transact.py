@@ -121,7 +121,7 @@ def _cumulative_spend(db: Session, mandate_id: str, window: MandateWindow) -> fl
     return total or 0.0
 
 
-def _blocked(db: Session, merchant_id: str, requester: str, reasoning: str, action_taken: str, input_data: dict, mandate_id: str | None = None) -> dict:
+def _blocked(db: Session, merchant_id: str, requester: str, reasoning: str, action_taken: str, input_data: dict, mandate_id: str | None = None, *, code: str, data: dict | None = None) -> dict:
     action = AgentAction(
         agent_name="Transact",
         merchant_id=merchant_id,
@@ -134,7 +134,20 @@ def _blocked(db: Session, merchant_id: str, requester: str, reasoning: str, acti
     )
     db.add(action)
     db.flush()
-    return {"status": "blocked", "reason": reasoning, "agent_action_id": action.id}
+    return {
+        "status": "blocked",
+        "reason": reasoning,
+        # `reason` is written for the merchant console's audit trail, where "mandate" is
+        # the right word. The buyer-facing agent must not repeat it (DESIGN_BRIEF §9), and
+        # it cannot rewrite what it cannot tell apart -- six different rules produce this
+        # same status. The code says which rule fired; the data carries the numbers that
+        # rule decided with, so the caller can say it in its own voice without re-deriving
+        # (and mis-deriving) them. `code` is keyword-only and required so a future block
+        # site cannot quietly ship without one.
+        "block_code": code,
+        "block_data": data or {},
+        "agent_action_id": action.id,
+    }
 
 
 # Razorpay payment link statuses -> our own TransactionStatus. "created"/"partially_paid"
@@ -194,6 +207,7 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             f"No mandate is configured for {merchant.name} — refusing to transact without a "
             "human-set spend boundary.",
             "Checked for an active mandate.", input_data,
+            code="no_mandate", data={"merchant_name": merchant.name},
         )
 
     if merchant.id not in (mandate.allow_listed_merchants or []):
@@ -202,6 +216,7 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             f"{merchant.name} is not on the mandate's allow-list — refusing to transact with "
             "a merchant the human hasn't pre-approved.",
             "Checked merchant against mandate allow-list.", input_data, mandate.id,
+            code="merchant_not_allowed", data={"merchant_name": merchant.name},
         )
 
     if mandate.per_transaction_cap is not None and requested_amount > mandate.per_transaction_cap:
@@ -212,6 +227,8 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             "budget, so a single large purchase can't slip through just because the window "
             "total has room.",
             "Checked requested amount against mandate per-transaction cap.", input_data, mandate.id,
+            code="per_transaction_cap",
+            data={"requested": requested_amount, "per_transaction_cap": mandate.per_transaction_cap},
         )
 
     already_spent = _cumulative_spend(db, mandate.id, mandate.window)
@@ -226,6 +243,23 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             f"Requested ₹{requested_amount:g} plus ₹{already_spent:g} already spent {window_label} "
             f"would exceed the mandate's ceiling of ₹{mandate.spend_ceiling:g}.",
             "Checked requested amount plus windowed cumulative spend against mandate spend ceiling.", input_data, mandate.id,
+            code="spend_ceiling",
+            data={
+                "requested": requested_amount,
+                "already_spent": already_spent,
+                "spend_ceiling": mandate.spend_ceiling,
+                # The remaining headroom under the window that actually refused this.
+                # Derivable from the three numbers above, but sent explicitly because the
+                # frontend previously recomputed spend from the audit log WITHOUT applying
+                # the window, so a daily/weekly mandate showed a larger spend (and a wrong
+                # overage) than the one the refusal was made on.
+                "remaining": max(mandate.spend_ceiling - already_spent, 0.0),
+                # The raw enum, not `window_label`. That label reads "so far under
+                # this mandate" for a one-time budget -- correct for the audit
+                # trail it was written for, and forbidden vocabulary in the buyer
+                # surface. Sending it would only invite the leak back in.
+                "window": mandate.window.value,
+            },
         )
 
     if abs(requested_amount - item.price) > PRICE_TOLERANCE:
@@ -235,6 +269,8 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             f"catalog price for {item.name} is ₹{item.price:g}. Halting before charging the "
             "stale price.",
             "Compared requested amount against live catalog price.", input_data, mandate.id,
+            code="price_mismatch",
+            data={"expected": requested_amount, "actual": item.price, "item_name": item.name},
         )
 
     if item.availability == "out_of_stock":
@@ -242,6 +278,7 @@ def attempt_purchase(db: Session, catalog_item_id: str, requested_amount: float,
             db, merchant.id, requester,
             f"{item.name} is out of stock — refusing to create an order for unavailable inventory.",
             "Checked item availability.", input_data, mandate.id,
+            code="out_of_stock", data={"item_name": item.name},
         )
 
     amount_paise = int(round(item.price * 100))

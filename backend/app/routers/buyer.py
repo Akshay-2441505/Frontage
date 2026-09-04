@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.agents.buyer import discover, shop
+from app.agents.buyer import _all_discoverable_products, discover, shop
 from app.db import get_db
 from app.models import Merchant
 from app.schemas import DiscoverGoalIn, ShoppingGoalIn
@@ -26,3 +26,19 @@ def buyer_discover(body: DiscoverGoalIn, db: Session = Depends(get_db)):
     result = discover(db, body.goal, history=history)
     db.commit()
     return result
+
+
+@router.get("/reach")
+def buyer_reach(db: Session = Depends(get_db)):
+    """How much of the market Otto can actually read, right now.
+
+    Counted from `_all_discoverable_products` -- the identical set `discover()`
+    searches -- rather than from the merchant table, so the hero's claim and the
+    funnel's first number can never disagree. A store that has connected but not
+    published a manifest is not reachable and is not counted.
+    """
+    products = _all_discoverable_products(db)
+    return {
+        "products": len(products),
+        "stores": len({p["merchant_id"] for p in products if p.get("merchant_id")}),
+    }
