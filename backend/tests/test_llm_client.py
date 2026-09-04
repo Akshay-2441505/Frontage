@@ -85,3 +85,17 @@ def test_get_client_sets_a_bounded_timeout(monkeypatch):
         llm_client.get_client()
 
     assert fake_groq_cls.call_args.kwargs["timeout"] == llm_client.GROQ_TIMEOUT_SECONDS
+
+
+def test_get_client_disables_the_sdks_own_retries(monkeypatch):
+    """The SDK's default max_retries=2 silently retries a stalling request up to 3 times
+    before ever raising -- discovered live, it multiplies GROQ_TIMEOUT_SECONDS by 3
+    (measured ~25s against an 8s timeout), defeating the point of bounding it at all.
+    _resolve_goal()'s fallback to OpenRouter is the intended response to a Groq failure,
+    not the SDK silently retrying the same struggling endpoint."""
+    monkeypatch.setattr(llm_client.settings, "groq_api_key", "gsk-test")
+
+    with patch.object(llm_client, "Groq") as fake_groq_cls:
+        llm_client.get_client()
+
+    assert fake_groq_cls.call_args.kwargs["max_retries"] == 0

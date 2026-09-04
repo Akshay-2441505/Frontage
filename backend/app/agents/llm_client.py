@@ -57,7 +57,12 @@ def get_client() -> Groq:
             "GROQ_API_KEY is not set. Copy .env.example to .env at the repo root and fill in "
             "a real Groq API key (free at console.groq.com)."
         )
-    return Groq(api_key=settings.groq_api_key, timeout=GROQ_TIMEOUT_SECONDS)
+    # max_retries=0: the SDK's default (2) retries the same stalling request up to 3
+    # times before ever raising -- discovered live, it multiplies GROQ_TIMEOUT_SECONDS
+    # by 3 (measured ~25s against an 8s timeout) and defeats the point of bounding it.
+    # _resolve_goal()'s own fallback to OpenRouter is the intended response to a Groq
+    # failure, not the SDK silently retrying the same struggling endpoint.
+    return Groq(api_key=settings.groq_api_key, timeout=GROQ_TIMEOUT_SECONDS, max_retries=0)
 
 
 def call_openrouter(messages: list[dict], response_format: dict) -> str:
