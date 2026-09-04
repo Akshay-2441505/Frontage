@@ -14,7 +14,7 @@ import json
 import groq
 from sqlalchemy.orm import Session
 
-from app.agents.llm_client import REASONING_MODEL, call_openrouter, get_client
+from app.agents.llm_client import GROQ_MAX_TOKENS, REASONING_MODEL, call_openrouter, get_client
 from app.agents.transact import attempt_purchase
 from app.models import AgentAction, AgentResult, CatalogItem, CatalogManifest, DiagnosticReport, Merchant
 
@@ -168,12 +168,14 @@ def _resolve_goal(
         {"role": "user", "content": user_content},
     ]
 
+    used_fallback = False
+    groq_error: Exception | None = None
     try:
         try:
             client = get_client()
             completion = client.chat.completions.create(
                 model=REASONING_MODEL,
-                max_tokens=600,
+                max_tokens=GROQ_MAX_TOKENS,
                 reasoning_effort="low",  # gpt-oss models spend tokens on hidden reasoning by default
                 response_format={"type": "json_object"},
                 messages=messages,
@@ -181,14 +183,19 @@ def _resolve_goal(
             raw = completion.choices[0].message.content.strip()
         except groq.APIStatusError as exc:
             if allow_fallback and exc.response.status_code in (413, 429):
+                groq_error = exc
+                used_fallback = True
                 raw = call_openrouter(messages, response_format={"type": "json_object"}).strip()
             else:
                 raise
         parsed = json.loads(raw)
     except Exception as exc:  # noqa: BLE001 - fail closed if the LLM call/parse fails
+        reason = f"Could not reason over the manifest for goal '{goal}': {exc}"
+        if groq_error is not None:
+            reason += f" (Groq had already rejected the request: {groq_error})"
         action = _log(
             db, default_merchant_id, goal,
-            f"Could not reason over the manifest for goal '{goal}': {exc}",
+            reason,
             "Called the LLM to select a product from the manifest.",
             AgentResult.failed,
         )
@@ -265,12 +272,16 @@ def _resolve_goal(
 
     resolved_merchant_id = selected.get("merchant_id") or default_merchant_id
 
+    reasoning = f"For goal '{goal}': {buyer_reasoning}"
+    if used_fallback:
+        reasoning += " (resolved via the OpenRouter fallback model, since Groq rejected the request.)"
+
     action = _log(
         db, resolved_merchant_id, goal,
-        f"For goal '{goal}': {buyer_reasoning}",
+        reasoning,
         f"Selected {selected['name']} (₹{selected['price']:g}) from the manifest and requested purchase.",
         AgentResult.success,
-        output={"selected_item_id": selected_id},
+        output={"selected_item_id": selected_id, "used_fallback": used_fallback},
     )
 
     purchase_result = attempt_purchase(db, selected_id, selected["price"], requester="BuyerAgent")

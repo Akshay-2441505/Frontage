@@ -39,3 +39,19 @@ def test_call_openrouter_raises_clearly_when_the_response_has_no_choices(monkeyp
     with patch.object(llm_client.httpx, "post", return_value=fake_response):
         with pytest.raises(RuntimeError, match="upstream provider unavailable"):
             llm_client.call_openrouter([], response_format={"type": "json_object"})
+
+
+def test_call_openrouter_raises_clearly_when_content_is_empty(monkeypatch):
+    """A reasoning model that spends its whole max_tokens budget on hidden reasoning
+    finishes with finish_reason "length" and empty/null content -- the same failure
+    shape as the missing-'choices' case, just one level deeper."""
+    monkeypatch.setattr(llm_client.settings, "openrouter_api_key", "sk-or-test")
+
+    fake_response = MagicMock()
+    fake_response.json.return_value = {
+        "choices": [{"finish_reason": "length", "message": {"content": None}}]
+    }
+
+    with patch.object(llm_client.httpx, "post", return_value=fake_response):
+        with pytest.raises(RuntimeError, match="finish_reason=length"):
+            llm_client.call_openrouter([], response_format={"type": "json_object"})

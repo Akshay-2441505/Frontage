@@ -347,6 +347,10 @@ def test_discover_falls_back_to_openrouter_when_groq_rejects_the_request_size(db
     assert result["selected_product"]["id"] == item1.id
     fake_openrouter.assert_called_once()
 
+    action = db_session.get(AgentAction, result["buyer_agent_action_id"])
+    assert action.output["used_fallback"] is True
+    assert "OpenRouter fallback" in action.reasoning
+
 
 def test_discover_falls_back_to_openrouter_on_a_standard_rate_limit_error(db_session, merchant):
     item1 = _published_merchant(db_session, merchant)
@@ -381,6 +385,8 @@ def test_discover_stays_failed_when_both_groq_and_openrouter_fail(db_session, me
         result = buyer_mod.discover(db_session, "anything")
 
     assert result["status"] == "failed"
+    action = db_session.get(AgentAction, result["agent_action_id"])
+    assert "Groq had already rejected the request" in action.reasoning
 
 
 def test_discover_does_not_fall_back_on_a_non_rate_limit_error(db_session, merchant):

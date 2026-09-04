@@ -21,6 +21,9 @@ FIX_MODEL = "openai/gpt-oss-20b"
 # Larger model for Transact/Buyer Agent decisions, which are the ones judged
 # on "explainable, bounded, gated".
 REASONING_MODEL = "openai/gpt-oss-120b"
+# gpt-oss's hidden reasoning at effort "low" is light enough that this comfortably
+# covers reasoning + the final JSON for a single-merchant prompt.
+GROQ_MAX_TOKENS = 600
 
 # Fallback model for discover()'s combined-catalog prompt when Groq's request-size/
 # rate-limit cap rejects it outright. Free tier, 256k+ context, verified live to
@@ -73,4 +76,11 @@ def call_openrouter(messages: list[dict], response_format: dict) -> str:
         # routing failure on a free-tier model) instead of raising an HTTP error --
         # surface that instead of a bare KeyError on the missing key.
         raise RuntimeError(f"OpenRouter returned no completion: {data.get('error', data)}")
-    return data["choices"][0]["message"]["content"]
+    choice = data["choices"][0]
+    content = choice["message"]["content"]
+    if not content:
+        # A reasoning model that hits max_tokens mid-reasoning finishes with
+        # finish_reason "length" and empty/null content -- the same failure shape
+        # as the missing-'choices' case above, just one level deeper.
+        raise RuntimeError(f"OpenRouter returned no content (finish_reason={choice.get('finish_reason')})")
+    return content
