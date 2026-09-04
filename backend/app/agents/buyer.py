@@ -10,6 +10,7 @@ same shoe) — in which case the agent must not silently guess one, it should
 say so and surface the candidates.
 """
 import json
+import re
 
 import groq
 from sqlalchemy.orm import Session
@@ -60,6 +61,46 @@ HISTORY_TURN_LIMIT = 3  # only the most recent turns matter for resolving a foll
 # and folding in the whole conversation would eat further into the same token budget
 # DESCRIPTION_PROMPT_CHARS already protects.
 HISTORY_FIELD_CHARS = 200
+
+
+# Filler words common in shopping goals that carry no product-matching signal on
+# their own -- excluded so e.g. "a good umbrella for the rain" doesn't spuriously
+# match every product whose description happens to contain "good" or "for".
+_STOPWORDS = {
+    "a", "an", "the", "for", "with", "under", "over", "and", "or", "of", "to", "in",
+    "on", "is", "are", "be", "me", "my", "i", "want", "need", "looking", "recommend",
+    "good", "nice", "best", "some", "something", "any", "that", "this", "one",
+}
+
+
+def _filter_relevant_products(goal: str, products: list[dict], limit: int = 50) -> list[dict]:
+    """Cheap keyword pre-filter so discover()'s combined-catalog prompt only carries
+    products plausibly relevant to the goal, instead of every published product from
+    every merchant -- most of what a broad catalog contains is irrelevant to any one
+    goal, and a smaller prompt both responds faster and more often fits under Groq's
+    rate-limit cap instead of falling through to OpenRouter's slower generation.
+
+    Matches on `name` + `description`, the exact fields _compact_for_prompt sends the
+    LLM -- the filter can't hide anything the LLM currently reasons on but the filter
+    doesn't see. Falls back to the full, unfiltered list when no product matches any
+    goal keyword, rather than risk showing the LLM an incomplete catalog for a goal too
+    vague to filter on (e.g. "recommend something nice")."""
+    words = [w for w in re.findall(r"[a-z0-9]+", goal.lower()) if len(w) >= 3 and w not in _STOPWORDS]
+    if not words:
+        return products
+
+    scored = []
+    for p in products:
+        haystack = f"{p['name']} {p['description'] or ''}".lower()
+        score = sum(1 for w in words if w in haystack)
+        if score > 0:
+            scored.append((score, p))
+
+    if not scored:
+        return products
+
+    scored.sort(key=lambda sp: (-sp[0], -(sp[1].get("merchant_score") or 0)))
+    return [p for _, p in scored[:limit]]
 
 
 def _format_history(history: list[dict] | None) -> str:
@@ -351,4 +392,5 @@ def discover(db: Session, goal: str, history: list[dict] | None = None) -> dict:
         )
         return {"status": "no_merchants", "agent_action_id": action.id}
 
+    products = _filter_relevant_products(goal, products)
     return _resolve_goal(db, goal, history, products, default_merchant_id=None, allow_fallback=True)
