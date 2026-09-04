@@ -65,18 +65,24 @@ HISTORY_FIELD_CHARS = 200
 SHORTLIST_SYSTEM_PROMPT = (
     "You are helping narrow down a large product catalog before a shopping decision is "
     "made. You will be given a buyer's goal (and recent conversation, if any) and a list "
-    "of product names. Respond with ONLY a JSON object, no other text: "
-    '{"relevant_ids": ["<id>", ...]}\n'
-    "Include the id of every product that could plausibly be relevant to the goal -- err "
-    "on the side of including a product if you're genuinely unsure, since a later step "
-    "makes the real accept/reject decision using each product's full details. If the goal "
-    "doesn't give you enough to meaningfully narrow the catalog down -- it's too vague, or "
-    "it reads like a reply to a previous message rather than a product description -- "
-    'return {"relevant_ids": []} instead of guessing.'
+    'of products, each shown as {"i": <index>, "name": "<name>"}. Respond with ONLY a JSON '
+    'object, no other text: {"relevant_indices": [<index>, ...]}\n'
+    "Include the index of every product that could plausibly be relevant to the goal -- "
+    "err on the side of including a product if you're genuinely unsure, since a later "
+    "step makes the real accept/reject decision using each product's full details. If the "
+    "goal doesn't give you enough to meaningfully narrow the catalog down -- it's too "
+    "vague, or it reads like a reply to a previous message rather than a product "
+    'description -- return {"relevant_indices": []} instead of guessing.'
 )
 
 SHORTLIST_CANDIDATE_LIMIT = 50
-SHORTLIST_MAX_TOKENS = 1000  # up to 50 returned ids (~36-char uuids) plus light reasoning
+# Up to 50 returned indices (small integers, not 36-char uuids) plus light reasoning.
+# Indices, not real ids, are what keeps the *catalog* side of this prompt small -- but
+# Groq's rate-limit cap counts prompt tokens AND max_tokens together (learned the hard
+# way: an earlier version of this prompt requested 9,108 tokens against Groq's 8,000
+# cap, counting the system prompt and this budget on top of a catalog that alone looked
+# safely under the limit) -- so this number must stay small too, not just "big enough."
+SHORTLIST_MAX_TOKENS = 600
 
 
 def _format_history(history: list[dict] | None) -> str:
@@ -358,23 +364,27 @@ def _all_discoverable_products(db: Session) -> list[dict]:
 
 
 def _shortlist_products(goal: str, history: list[dict] | None, products: list[dict]) -> list[dict] | None:
-    """Cheap first pass over the full catalog: a much smaller prompt (just id+name, no
-    description/price/merchant fields) asks the LLM which products are worth a closer
-    look, before the expensive full-detail reasoning in _resolve_goal(). Returns a
-    shortlisted subset of `products`, or None when the LLM can't confidently narrow the
-    catalog down (or the call itself fails for any reason) -- callers must fall back to
-    the full catalog in that case, never to an empty or partial one. This is what makes
-    shortlisting strictly safer than the keyword-substring filter it replaces: relevance
-    is judged by an LLM that understands "shoes" should match "sneakers"/"flip-flops"/
-    "loafers", not by literal word overlap with brand-voice product copy that often never
-    says the category word at all."""
+    """Cheap first pass over the full catalog: a much smaller prompt (just a positional
+    index + name per product, no id/description/price/merchant fields) asks the LLM which
+    products are worth a closer look, before the expensive full-detail reasoning in
+    _resolve_goal(). Returns a shortlisted subset of `products`, or None when the LLM
+    can't confidently narrow the catalog down (or the call itself fails for any reason) --
+    callers must fall back to the full catalog in that case, never to an empty or partial
+    one. This is what makes shortlisting strictly safer than the keyword-substring filter
+    it replaces: relevance is judged by an LLM that understands "shoes" should match
+    "sneakers"/"flip-flops"/"loafers", not by literal word overlap with brand-voice
+    product copy that often never says the category word at all.
+
+    Indices instead of real ids: a 36-char uuid per product is the single biggest cost in
+    this prompt, and unlike _resolve_goal() this call has no room to spare -- the whole
+    point is staying under Groq's rate-limit cap even at full catalog size."""
     history_text = _format_history(history)
     user_content = f"Shopping goal: {goal}\n\n"
     if history_text:
         user_content += f"Conversation so far:\n{history_text}\n\n"
     user_content += (
-        "Product catalog (id and name only):\n"
-        + json.dumps([{"id": p["id"], "name": p["name"]} for p in products], separators=(",", ":"))
+        "Product catalog:\n"
+        + json.dumps([{"i": idx, "name": p["name"]} for idx, p in enumerate(products)], separators=(",", ":"))
     )
 
     try:
@@ -390,17 +400,20 @@ def _shortlist_products(goal: str, history: list[dict] | None, products: list[di
             ],
         )
         parsed = json.loads(completion.choices[0].message.content.strip())
-        relevant_ids = parsed.get("relevant_ids") or []
+        relevant_indices = parsed.get("relevant_indices") or []
     except Exception:  # noqa: BLE001 -- any shortlist failure just means "use the full catalog"
         return None
 
-    by_id = {p["id"]: p for p in products}
-    seen: set[str] = set()
+    seen: set[int] = set()
     shortlisted = []
-    for item_id in relevant_ids:
-        if item_id in by_id and item_id not in seen:
-            seen.add(item_id)
-            shortlisted.append(by_id[item_id])
+    for raw_index in relevant_indices:
+        try:
+            idx = int(raw_index)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < len(products) and idx not in seen:
+            seen.add(idx)
+            shortlisted.append(products[idx])
 
     return shortlisted[:SHORTLIST_CANDIDATE_LIMIT] if shortlisted else None
 

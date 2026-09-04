@@ -432,7 +432,7 @@ def _product(id, name, description="", merchant_id="m1", merchant_name="Merchant
 def test_shortlist_products_returns_validated_products_from_llm_response():
     products = [_product("1", "Green Shirt"), _product("2", "Blue Hat"), _product("3", "Red Shoe")]
     fake_client = MagicMock()
-    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_ids": ["1", "3"]})
+    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_indices": [0, 2]})
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
         result = buyer_mod._shortlist_products("a green shirt", None, products)
@@ -440,11 +440,11 @@ def test_shortlist_products_returns_validated_products_from_llm_response():
     assert {p["id"] for p in result} == {"1", "3"}
 
 
-def test_shortlist_products_drops_hallucinated_ids():
+def test_shortlist_products_drops_out_of_range_indices():
     products = [_product("1", "Green Shirt")]
     fake_client = MagicMock()
     fake_client.chat.completions.create.return_value = _fake_completion(
-        {"relevant_ids": ["1", "does-not-exist"]}
+        {"relevant_indices": [0, 99, -1]}
     )
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
@@ -453,10 +453,23 @@ def test_shortlist_products_drops_hallucinated_ids():
     assert [p["id"] for p in result] == ["1"]
 
 
-def test_shortlist_products_deduplicates_repeated_ids():
+def test_shortlist_products_drops_non_integer_indices():
     products = [_product("1", "Green Shirt")]
     fake_client = MagicMock()
-    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_ids": ["1", "1", "1"]})
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"relevant_indices": [0, "not-a-number", None]}
+    )
+
+    with patch.object(buyer_mod, "get_client", return_value=fake_client):
+        result = buyer_mod._shortlist_products("a shirt", None, products)
+
+    assert [p["id"] for p in result] == ["1"]
+
+
+def test_shortlist_products_deduplicates_repeated_indices():
+    products = [_product("1", "Green Shirt")]
+    fake_client = MagicMock()
+    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_indices": [0, 0, 0]})
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
         result = buyer_mod._shortlist_products("a shirt", None, products)
@@ -467,7 +480,7 @@ def test_shortlist_products_deduplicates_repeated_ids():
 def test_shortlist_products_returns_none_when_llm_returns_empty_list():
     products = [_product("1", "Green Shirt")]
     fake_client = MagicMock()
-    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_ids": []})
+    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_indices": []})
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
         result = buyer_mod._shortlist_products("recommend something nice", None, products)
@@ -475,11 +488,11 @@ def test_shortlist_products_returns_none_when_llm_returns_empty_list():
     assert result is None
 
 
-def test_shortlist_products_returns_none_when_every_returned_id_is_hallucinated():
+def test_shortlist_products_returns_none_when_every_returned_index_is_invalid():
     products = [_product("1", "Green Shirt")]
     fake_client = MagicMock()
     fake_client.chat.completions.create.return_value = _fake_completion(
-        {"relevant_ids": ["ghost-1", "ghost-2"]}
+        {"relevant_indices": [99, -1]}
     )
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
@@ -492,7 +505,7 @@ def test_shortlist_products_caps_to_the_limit():
     products = [_product(str(i), f"Widget {i}") for i in range(60)]
     fake_client = MagicMock()
     fake_client.chat.completions.create.return_value = _fake_completion(
-        {"relevant_ids": [str(i) for i in range(60)]}
+        {"relevant_indices": list(range(60))}
     )
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
@@ -512,10 +525,10 @@ def test_shortlist_products_returns_none_on_any_llm_error():
     assert result is None
 
 
-def test_shortlist_products_prompt_only_includes_id_and_name():
+def test_shortlist_products_prompt_only_includes_index_and_name():
     products = [_product("1", "Green Shirt", description="a very telling description", merchant_name="Acme")]
     fake_client = MagicMock()
-    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_ids": ["1"]})
+    fake_client.chat.completions.create.return_value = _fake_completion({"relevant_indices": [0]})
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
         buyer_mod._shortlist_products("a shirt", None, products)
@@ -525,6 +538,7 @@ def test_shortlist_products_prompt_only_includes_id_and_name():
     assert "a very telling description" not in user_message
     assert "Acme" not in user_message
     assert "100.0" not in user_message
+    assert '"1"' not in user_message  # the real id must not appear -- indices only
 
 
 def test_discover_uses_the_shortlist_to_narrow_the_final_prompt(db_session, merchant):
@@ -541,9 +555,15 @@ def test_discover_uses_the_shortlist_to_narrow_the_final_prompt(db_session, merc
     db_session.add(CatalogManifest(merchant_id=merchant.id, version=1, url="/x", item_ids=[shirt.id, watch.id]))
     db_session.flush()
 
+    # The shortlist prompt returns positional indices, not ids -- find the shirt's real
+    # index the same way discover() will build the catalog, rather than assuming order.
+    shirt_index = next(
+        i for i, p in enumerate(buyer_mod._all_discoverable_products(db_session)) if p["id"] == shirt.id
+    )
+
     fake_client = MagicMock()
     fake_client.chat.completions.create.side_effect = [
-        _fake_completion({"relevant_ids": [shirt.id]}),
+        _fake_completion({"relevant_indices": [shirt_index]}),
         _fake_completion({"status": "match", "selected_item_id": shirt.id, "reasoning": "Match."}),
     ]
 
@@ -571,7 +591,7 @@ def test_discover_sends_the_full_catalog_when_the_shortlist_cannot_narrow_down(d
 
     fake_client = MagicMock()
     fake_client.chat.completions.create.side_effect = [
-        _fake_completion({"relevant_ids": []}),
+        _fake_completion({"relevant_indices": []}),
         _fake_completion({"status": "need_more_info", "reasoning": "What are you looking for?"}),
     ]
 
