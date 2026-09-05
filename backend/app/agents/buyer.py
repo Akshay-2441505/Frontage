@@ -490,20 +490,23 @@ def discover(db: Session, goal: str, history: list[dict] | None = None) -> dict:
         )
         return {"status": "no_merchants", "agent_action_id": action.id}
 
-    shortlisted = _shortlist_products(goal, history, products)
-    candidates = shortlisted if shortlisted is not None else products
+    # Shortlisting is switched off for now: verified live against the real, current
+    # catalog size (372 items) that it was failing on almost every call -- its own
+    # prompt cost at this size sits close enough to Groq's account-wide 8,000 TPM cap
+    # that it kept getting rate-limited, silently falling back to the full catalog
+    # anyway (via its own safe-by-design fallback), after spending a wasted round trip
+    # AND rate-limit budget that then starved whatever query came right after it. Net
+    # effect at this catalog size: pure added latency, no narrowing benefit, and it
+    # was making back-to-back queries slower, not faster. _shortlist_products() is
+    # left intact below rather than deleted -- worth revisiting if the catalog shrinks
+    # again or the account moves off the free tier.
+    candidates = products
     result = _resolve_goal(db, goal, history, candidates, default_merchant_id=None, allow_fallback=True)
 
     # How the answer was reached, for callers that want to show the narrowing rather than
-    # just the conclusion. Added here rather than inside _resolve_goal() because that is
-    # shared with the single-merchant shop() path, where there is no catalog-wide funnel
-    # to describe.
-    #
-    # `shortlist` is None when _shortlist_products() declined or failed: candidates is
-    # then the entire catalog, and reporting 222 products as "the shortlist" would claim a
-    # narrowing that never happened.
+    # just the conclusion. `shortlist` stays None while shortlisting is switched off above --
+    # candidates is always the entire catalog, and reporting it as "the shortlist" would
+    # claim a narrowing that never happened.
     result["considered_count"] = len(products)
-    result["shortlist"] = (
-        [_shortlist_summary(p) for p in shortlisted] if shortlisted is not None else None
-    )
+    result["shortlist"] = None
     return result

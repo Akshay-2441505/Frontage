@@ -582,7 +582,12 @@ def test_shortlist_products_prompt_only_includes_index_and_name():
     assert '"1"' not in user_message  # the real id must not appear -- indices only
 
 
-def test_discover_uses_the_shortlist_to_narrow_the_final_prompt(db_session, merchant):
+def test_discover_sends_the_full_catalog_since_shortlisting_is_disabled(db_session, merchant):
+    """Shortlisting is switched off in discover() (see the comment there): verified live
+    that at real catalog size its own prompt cost was tipping Groq's account-wide rate
+    cap, so it was silently falling back to the full catalog anyway on almost every
+    call -- just after wasting a round trip and rate-limit budget first. discover() now
+    goes straight to the full-detail resolve call, in one LLM call rather than two."""
     shirt = CatalogItem(
         merchant_id=merchant.id, name="Green Striped T-Shirt", description="100% cotton",
         price=500.0, currency="INR", availability="in_stock", agent_readable=True,
@@ -596,49 +601,15 @@ def test_discover_uses_the_shortlist_to_narrow_the_final_prompt(db_session, merc
     db_session.add(CatalogManifest(merchant_id=merchant.id, version=1, url="/x", item_ids=[shirt.id, watch.id]))
     db_session.flush()
 
-    # The shortlist prompt returns positional indices, not ids -- find the shirt's real
-    # index the same way discover() will build the catalog, rather than assuming order.
-    shirt_index = next(
-        i for i, p in enumerate(buyer_mod._all_discoverable_products(db_session)) if p["id"] == shirt.id
-    )
-
     fake_client = MagicMock()
-    fake_client.chat.completions.create.side_effect = [
-        _fake_completion({"relevant_indices": [shirt_index]}),
-        _fake_completion({"status": "match", "selected_item_id": shirt.id, "reasoning": "Match."}),
-    ]
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "match", "selected_item_id": shirt.id, "reasoning": "Match."}
+    )
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
         buyer_mod.discover(db_session, "a green striped t-shirt")
 
-    final_prompt = fake_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
-    assert "Green Striped T-Shirt" in final_prompt
-    assert "Bangalore Watch Co Weekender" not in final_prompt
-
-
-def test_discover_sends_the_full_catalog_when_the_shortlist_cannot_narrow_down(db_session, merchant):
-    shirt = CatalogItem(
-        merchant_id=merchant.id, name="Green Striped T-Shirt", description="100% cotton",
-        price=500.0, currency="INR", availability="in_stock", agent_readable=True,
-    )
-    watch = CatalogItem(
-        merchant_id=merchant.id, name="Bangalore Watch Co Weekender", description="A steel watch",
-        price=26000.0, currency="INR", availability="in_stock", agent_readable=True,
-    )
-    db_session.add_all([shirt, watch])
-    db_session.flush()
-    db_session.add(CatalogManifest(merchant_id=merchant.id, version=1, url="/x", item_ids=[shirt.id, watch.id]))
-    db_session.flush()
-
-    fake_client = MagicMock()
-    fake_client.chat.completions.create.side_effect = [
-        _fake_completion({"relevant_indices": []}),
-        _fake_completion({"status": "need_more_info", "reasoning": "What are you looking for?"}),
-    ]
-
-    with patch.object(buyer_mod, "get_client", return_value=fake_client):
-        buyer_mod.discover(db_session, "recommend something nice")
-
+    assert fake_client.chat.completions.create.call_count == 1
     final_prompt = fake_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
     assert "Green Striped T-Shirt" in final_prompt
     assert "Bangalore Watch Co Weekender" in final_prompt
@@ -723,54 +694,26 @@ def test_shop_dry_run_still_returns_ambiguous_and_need_more_info_normally(db_ses
 # considered. These fields describe that, without changing any existing one.
 
 
-def test_discover_reports_considered_count_and_shortlist(db_session, merchant):
-    item1 = _published_merchant(db_session, merchant)
+def test_discover_reports_considered_count_with_shortlist_always_none(db_session, merchant):
+    """Shortlisting is disabled (see discover()'s comment) -- `shortlist` is always None
+    now, and `considered_count` still reports how much of the catalog was read."""
+    _published_merchant(db_session, merchant)
 
     merchant2 = Merchant(name="Second Store", catalog_source="test")
     db_session.add(merchant2)
     db_session.flush()
-    item2 = _published_merchant(db_session, merchant2)
+    _published_merchant(db_session, merchant2)
 
     fake_client = MagicMock()
-    # First call is the shortlist pass, second is the full-detail resolve. Which product
-    # lands at index 0 depends on merchant query order, so the assertions below check
-    # membership rather than a fixed id.
-    fake_client.chat.completions.create.side_effect = [
-        _fake_completion({"relevant_indices": [0]}),
-        _fake_completion({"status": "no_match", "reasoning": "Not quite."}),
-    ]
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "no_match", "reasoning": "Not quite."}
+    )
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
         result = buyer_mod.discover(db_session, "something specific")
 
+    assert fake_client.chat.completions.create.call_count == 1
     assert result["considered_count"] == 2, "both merchants' products were read"
-    assert result["shortlist"] is not None
-    assert len(result["shortlist"]) == 1, "one of the two was narrowed to"
-
-    entry = result["shortlist"][0]
-    assert entry["id"] in {item1.id, item2.id}
-    assert entry["merchant_name"] in {"Test Merchant", "Second Store"}
-    assert entry["price"] == 100.0
-    # Descriptions are deliberately absent -- a real catalog carries thousands of
-    # characters per product and the shortlist can hold fifty of them.
-    assert "description" not in entry
-
-
-def test_discover_shortlist_is_none_when_no_narrowing_happened(db_session, merchant):
-    """A failed or declined shortlist falls back to the whole catalog. Reporting that
-    as 'the shortlist' would claim a narrowing that never took place."""
-    item1 = _published_merchant(db_session, merchant)
-
-    fake_client = MagicMock()
-    fake_client.chat.completions.create.side_effect = [
-        _fake_completion({"relevant_indices": []}),  # declined to narrow
-        _fake_completion({"status": "match", "selected_item_id": item1.id, "reasoning": "Match."}),
-    ]
-
-    with patch.object(buyer_mod, "get_client", return_value=fake_client):
-        result = buyer_mod.discover(db_session, "anything")
-
-    assert result["considered_count"] == 1
     assert result["shortlist"] is None
 
 
@@ -779,17 +722,16 @@ def test_discover_reports_the_funnel_on_a_no_match_too(db_session, merchant):
     _published_merchant(db_session, merchant)
 
     fake_client = MagicMock()
-    fake_client.chat.completions.create.side_effect = [
-        _fake_completion({"relevant_indices": [0]}),
-        _fake_completion({"status": "no_match", "reasoning": "Nothing fits."}),
-    ]
+    fake_client.chat.completions.create.return_value = _fake_completion(
+        {"status": "no_match", "reasoning": "Nothing fits."}
+    )
 
     with patch.object(buyer_mod, "get_client", return_value=fake_client):
         result = buyer_mod.discover(db_session, "a tractor engine")
 
     assert result["status"] == "no_match"
     assert result["considered_count"] == 1
-    assert len(result["shortlist"]) == 1
+    assert result["shortlist"] is None
 
 
 def test_shop_does_not_gain_discover_only_fields(db_session, merchant):
