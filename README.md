@@ -10,6 +10,8 @@ project and what actually works.
 real Razorpay test-mode order created by the simulated Buyer Agent, and the deliberate
 spend-ceiling-breach failure case triggering correctly through that same natural path.
 
+**Live demo:** https://frontage-frontend.vercel.app
+
 ## What it does
 
 1. **Diagnose** — audits a merchant's catalog against a 4-check agent-readability rubric
