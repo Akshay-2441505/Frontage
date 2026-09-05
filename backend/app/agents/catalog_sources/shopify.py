@@ -1,4 +1,6 @@
+import ipaddress
 import re
+import socket
 from html import unescape
 from urllib.parse import urlparse
 
@@ -21,6 +23,27 @@ def _strip_html(raw: str | None) -> str | None:
     return text or None
 
 
+def _reject_private_destinations(hostname: str) -> None:
+    """SSRF guard: this import feature fetches a merchant-supplied URL from our own
+    server, so a hostname that resolves anywhere non-public -- loopback, private
+    network ranges, or link-local (which includes 169.254.169.254, the AWS/GCP/Azure
+    instance-metadata endpoint) -- must be rejected before we ever connect to it.
+    Checks every resolved address, not just the hostname string, since the store url
+    could be a raw IP already. Doesn't re-check at connect time, so a DNS answer that
+    changes between this lookup and the actual fetch (DNS rebinding) isn't covered --
+    an accepted gap for this buildathon-scope import feature, not a production
+    payment path."""
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise CatalogFetchError(f"Could not resolve '{hostname}'.") from exc
+
+    for *_rest, sockaddr in addrinfo:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise CatalogFetchError(f"'{hostname}' does not point to a public store address.")
+
+
 def normalize_store_url(store_url: str) -> str:
     store_url = store_url.strip()
     if not store_url.startswith("http"):
@@ -28,6 +51,11 @@ def normalize_store_url(store_url: str) -> str:
     parsed = urlparse(store_url)
     if not parsed.netloc:
         raise CatalogFetchError(f"'{store_url}' doesn't look like a valid store URL.")
+    if parsed.scheme not in ("http", "https"):
+        raise CatalogFetchError(f"'{store_url}' must use http or https.")
+    if not parsed.hostname:
+        raise CatalogFetchError(f"'{store_url}' doesn't look like a valid store URL.")
+    _reject_private_destinations(parsed.hostname)
     return f"{parsed.scheme}://{parsed.netloc}"
 
 

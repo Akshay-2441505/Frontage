@@ -1,4 +1,48 @@
-from app.agents.catalog_sources.shopify import ShopifySource
+import socket
+from unittest.mock import patch
+
+import pytest
+
+from app.agents.catalog_sources.base import CatalogFetchError
+from app.agents.catalog_sources.shopify import ShopifySource, normalize_store_url
+
+
+def _fake_addrinfo(ip: str):
+    # Shape socket.getaddrinfo actually returns: a list of
+    # (family, type, proto, canonname, sockaddr) tuples -- only sockaddr[0] (the ip)
+    # is read by the code under test, so the rest are innocuous placeholders.
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]
+
+
+def test_normalize_store_url_allows_a_public_address():
+    with patch("socket.getaddrinfo", return_value=_fake_addrinfo("93.184.216.34")):
+        assert normalize_store_url("example.com") == "https://example.com"
+
+
+def test_normalize_store_url_rejects_loopback():
+    with patch("socket.getaddrinfo", return_value=_fake_addrinfo("127.0.0.1")):
+        with pytest.raises(CatalogFetchError):
+            normalize_store_url("localhost")
+
+
+def test_normalize_store_url_rejects_private_network_ranges():
+    with patch("socket.getaddrinfo", return_value=_fake_addrinfo("10.0.0.5")):
+        with pytest.raises(CatalogFetchError):
+            normalize_store_url("internal.example.com")
+
+
+def test_normalize_store_url_rejects_the_cloud_metadata_address():
+    # 169.254.169.254 -- the AWS/GCP/Azure instance-metadata endpoint, the classic
+    # SSRF target this check exists to close off.
+    with patch("socket.getaddrinfo", return_value=_fake_addrinfo("169.254.169.254")):
+        with pytest.raises(CatalogFetchError):
+            normalize_store_url("169.254.169.254")
+
+
+def test_normalize_store_url_rejects_unresolvable_hosts():
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
+        with pytest.raises(CatalogFetchError):
+            normalize_store_url("this-does-not-exist.invalid")
 
 
 def _product(**overrides):
