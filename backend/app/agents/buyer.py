@@ -43,6 +43,14 @@ SYSTEM_PROMPT = (
     "conversation history is given below, use it: if you already asked a clarifying question "
     "and the buyer's current goal answers it, resolve to match/ambiguous/no_match using the "
     "combined context -- never ask a second clarifying question in a row about the same thing. "
+    "If history shows an item was out of stock, had its price change, or was otherwise blocked "
+    "at checkout, do not select that same item again for a follow-up goal asking for something "
+    "similar -- find a genuinely different product that still satisfies the goal, or return "
+    "no_match if nothing else does. If products below carry a merchant_name field, this catalog "
+    "spans every store the buyer can shop from, not just one -- if your no_match reasoning offers "
+    "to look further, phrase that as checking other stores too, never as staying within whichever "
+    "store the goal happened to name (with no merchant_name field, the catalog is already a "
+    "single store, so this doesn't apply). "
     "Each product may also include merchant_name and merchant_score (0-100, higher means the "
     "merchant is better prepared for agents like you to shop from) -- when multiple products "
     "from different merchants are similarly good matches for the goal, prefer the one from the "
@@ -64,9 +72,10 @@ HISTORY_FIELD_CHARS = 200
 
 SHORTLIST_SYSTEM_PROMPT = (
     "You are helping narrow down a large product catalog before a shopping decision is "
-    "made. You will be given a buyer's goal (and recent conversation, if any) and a list "
-    'of products, each shown as {"i": <index>, "name": "<name>"}. Respond with ONLY a JSON '
-    'object, no other text: {"relevant_indices": [<index>, ...]}\n'
+    "made. You will be given a buyer's goal (and recent conversation, if any) and a JSON "
+    "array of product names, in catalog order -- each name's position in that array (0, "
+    '1, 2, ...) is its index. Respond with ONLY a JSON object, no other text: '
+    '{"relevant_indices": [<index>, ...]}\n'
     "Include the index of every product that could plausibly be relevant to the goal -- "
     "err on the side of including a product if you're genuinely unsure, since a later "
     "step makes the real accept/reject decision using each product's full details. If the "
@@ -405,14 +414,23 @@ def _shortlist_products(goal: str, history: list[dict] | None, products: list[di
 
     Indices instead of real ids: a 36-char uuid per product is the single biggest cost in
     this prompt, and unlike _resolve_goal() this call has no room to spare -- the whole
-    point is staying under Groq's rate-limit cap even at full catalog size."""
+    point is staying under Groq's rate-limit cap even at full catalog size.
+
+    A plain array of names (position = index), not a {"i":idx,"name":...} object per
+    product: verified live against the real catalog, the object form cost ~4,600 prompt
+    tokens for 257 products -- within one more call of blowing Groq's 8,000 TPM cap for
+    the whole account, not just this request. The object's own JSON scaffolding (the
+    repeated `{"i":`, `,"name":`, `}` around every single entry) turned out to be the
+    single biggest cost in the prompt, bigger than the names themselves; dropping it
+    cut the same prompt to ~2,950 tokens with zero information lost -- same names, same
+    order, position is still the index either way."""
     history_text = _format_history(history)
     user_content = f"Shopping goal: {goal}\n\n"
     if history_text:
         user_content += f"Conversation so far:\n{history_text}\n\n"
     user_content += (
-        "Product catalog:\n"
-        + json.dumps([{"i": idx, "name": p["name"]} for idx, p in enumerate(products)], separators=(",", ":"))
+        "Product catalog (index = position in this array):\n"
+        + json.dumps([p["name"] for p in products], separators=(",", ":"))
     )
 
     try:

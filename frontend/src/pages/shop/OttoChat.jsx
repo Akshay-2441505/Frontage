@@ -65,6 +65,40 @@ function differentiators(candidates) {
 
 const HISTORY_TURN_LIMIT = 3
 
+/* A resolved turn's top-level status is always "purchase_attempted", whether the
+   purchase actually went through or was blocked (out of stock, over budget, ...) --
+   the real outcome lives one level down, in purchase_result. Sending the flat
+   "purchase_attempted" label into history erased that distinction entirely: the
+   agent would see "buyer asked for X -> agent matched X" with no sign X was just
+   refused, and cheerfully re-select the same sold-out item on "find me something
+   like X". This reconstructs the real status/reason before the turn goes into
+   history, so the agent actually knows the prior pick didn't work out. */
+function historyStatus(result) {
+  if (result.purchase_result) {
+    return result.purchase_result.status === 'blocked' ? 'blocked' : 'purchased'
+  }
+  return result.status
+}
+
+const BLOCK_HISTORY_REASON = {
+  out_of_stock: (item) => `${item} was out of stock at checkout.`,
+  price_mismatch: (item) => `${item}'s price changed at checkout.`,
+  spend_ceiling: (item) => `The spending limit was reached, so ${item} could not be bought.`,
+  per_transaction_cap: (item) => `${item} was above the per-purchase limit.`,
+  no_mandate: () => 'No spending limit is set for that store yet.',
+  merchant_not_allowed: () => 'That store is not on the approved list.',
+}
+
+function historyReasoning(result) {
+  if (result.purchase_result?.status === 'blocked') {
+    const data = result.purchase_result.block_data || {}
+    const item = data.item_name || result.selected_product?.name || 'the item'
+    const describe = BLOCK_HISTORY_REASON[result.purchase_result.block_code]
+    return describe ? describe(item) : `Could not complete the purchase of ${item}.`
+  }
+  return result.reasoning || result.buyer_reasoning || ''
+}
+
 /* Mirrors the backend's own cap (buyer.py's HISTORY_TURN_LIMIT) -- trimming here just
    keeps the request small; the backend enforces its own limit regardless of what's sent.
    Turns still "thinking" (no result yet) are skipped, since there's nothing to tell the
@@ -75,8 +109,8 @@ function buildHistory(turns) {
     .slice(-HISTORY_TURN_LIMIT)
     .map((t) => ({
       goal: t.goal,
-      status: t.result.status,
-      reasoning: t.result.reasoning || t.result.buyer_reasoning || '',
+      status: historyStatus(t.result),
+      reasoning: historyReasoning(t.result),
     }))
 }
 
