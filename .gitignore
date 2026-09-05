@@ -1,5 +1,7 @@
-# env / secrets
+# env / secrets -- .env* also catches Vite's .env.local/.env.production.local
+# convention (frontend/.env.local), not just a literal ".env" or "*.env"
 .env
+.env.*
 *.env
 !.env.example
 

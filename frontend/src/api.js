@@ -1,4 +1,6 @@
-export const BASE_URL = 'http://127.0.0.1:8000'
+// Falls back to the local backend for dev; set VITE_API_BASE_URL in production
+// (e.g. Vercel project settings) to the real deployed backend origin.
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 /* The address an agent would actually fetch. Shown in the console so the
    manifest reads as a real, reachable artifact rather than a blob of JSON. */
